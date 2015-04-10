@@ -1,0 +1,91 @@
+' Gambas class file 
+
+Private myGrid As GridView
+
+
+Public Sub _new(aGrid As GridView)
+    
+    myGrid = aGrid
+    
+End
+
+Public Function loadGridView() As Boolean
+    
+    Dim ret As Boolean = False
+    Dim row As Integer
+    Dim column As Integer
+   
+    
+    myGrid.Clear
+    
+    
+    
+    ' If resultSet <> Null Then
+    '     myGrid.Clear
+    '     myGrid.Columns.Count = resultSet.Fields.Count
+    '     myGrid.Rows.Count = resultSet.Count      
+    '     
+    '     For Each hField In resultSet.Fields
+    '         
+    '         With hField
+    '             myGrid.Columns[column].Text = hField.Name
+    '             myGrid.Columns[column].Width = WidthFromType(myGrid, .Type, .Length, .Name)
+    '             myGrid.Columns[column].Alignment = 3
+    '         End With
+    '         Inc column
+    '     Next   
+    '     
+    '     For row = 0 To myGrid.Rows.Count - 1
+    '         resultSet.MoveTo(row)  
+    '         For column = 0 To myGrid.Columns.Count - 1
+    '             myGrid[row, column].Text = Trim(Str(resultSet[myGrid.Columns[column].Text]))
+    '             myGrid[row, column].Background = Color.RGB((Row Mod 31) * 8, (Row Mod 17) * 15, (Row Mod 13) * 21)
+    '             myGrid[row, column].Foreground = Color.White
+    '             myGrid[row, column].Alignment = 3
+    '         Next
+    '     Next
+    '     
+    ' Endif
+    
+End
+
+Private Function WidthFromType(hCtrl As Control, iType As Integer, iLength As Integer, sTitle As String) As Integer
+    
+    Dim iWidth As Integer
+    
+    Select Case iType
+            
+        Case gb.Boolean
+            iWidth = hCtrl.Font.TextWidth(Str(False)) + 32
+            
+        Case gb.Integer
+            iWidth = hCtrl.Font.TextWidth("1234567890") + 16
+            
+        Case gb.Long
+            iWidth = hCtrl.Font.TextWidth("12345678901234567890") + 16
+            
+        Case gb.Float
+            iWidth = hCtrl.Font.TextWidth(CStr(Pi) & "E+999") + 16
+            
+        Case gb.Date
+            iWidth = hCtrl.Font.TextWidth(Str(Now)) + 16
+            
+        Case gb.String
+            If iLength = 0 Then iLength = 255
+            '32
+            iLength = Min(16, iLength)
+            iWidth = hCtrl.Font.TextWidth("X") * iLength + 16
+            
+    End Select
+    
+    iWidth = Max(iWidth, hCtrl.Font.TextWidth(sTitle) + 8)
+    
+    Return iWidth
+    
+End
+
+Public Function getCount() As Integer
+    
+    Return myGrid.Rows.Count
+    
+End

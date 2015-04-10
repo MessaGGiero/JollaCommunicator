@@ -1,0 +1,220 @@
+# Gambas Form File 3.0
+
+{ Form Form
+  MoveScaled(0,0,112,68)
+  Text = ("Jolla Communicator")
+  Arrangement = Arrange.Vertical
+  { MenuContext Menu
+    Text = ("MenuContext")
+    Visible = False
+    { Delete Menu
+      Text = ("Delete")
+      Picture = Picture["icon:/16/trash"]
+    }
+    { Reply Menu
+      Text = ("Reply")
+      Picture = Picture["icon:/16/redo"]
+      Enabled = False
+      Visible = False
+    }
+  }
+  { topToolBar HPanel
+    MoveScaled(0,0,78,5)
+    Background = Color.LightForeground
+    AutoResize = True
+    Spacing = True
+    { connectButton ToolButton
+      MoveScaled(0,0,4,4)
+      ToolTip = ("Connect")
+      Picture = Picture["play.png"]
+    }
+    { disconnectButton ToolButton
+      MoveScaled(4,0,4,4)
+      Enabled = False
+      ToolTip = ("Diconnect")
+      Picture = Picture["stop.png"]
+    }
+    { settingsButton ToolButton
+      MoveScaled(8,0,4,4)
+      ToolTip = ("Settings")
+      Picture = Picture["options.png"]
+    }
+    { exitButton ToolButton
+      MoveScaled(12,0,4,4)
+      ToolTip = ("Quit")
+      Picture = Picture["quit.png"]
+    }
+    { infoButton ToolButton
+      MoveScaled(17,0,4,4)
+      Picture = Picture["info.png"]
+    }
+  }
+  { tabFun TabStrip
+    MoveScaled(0,6,105,58)
+    Enabled = False
+    Expand = True
+    Arrangement = Arrange.Vertical
+    Count = 2
+    Index = 0
+    Text = ("SMS")
+    Picture = Picture["conver48x48.png"]
+    { HPanel1 HPanel
+      MoveScaled(0,2,65,4)
+      { TextBox1 TextBox
+        MoveScaled(0,0,33,4)
+        Visible = False
+      }
+      { Button1 Button
+        MoveScaled(33,0,8,4)
+        Visible = False
+        Text = ("Filter ")
+        Picture = Picture["filter22x22.png"]
+      }
+      { refreshTreeSms Button
+        MoveScaled(41,0,10,4)
+        Text = ("Reload")
+        Picture = Picture["refresh22x22.png"]
+      }
+    }
+    { panelTree Panel
+      MoveScaled(0,6,101,47)
+      Font = Font["Italic"]
+      Expand = True
+      Arrangement = Arrange.Horizontal
+      Border = Border.Plain
+      { treeSms TreeView
+        MoveScaled(0,0,55,28)
+        PopupMenu = "MenuContext"
+      }
+      { panelArea Panel
+        MoveScaled(55,0,46,46)
+        Expand = True
+        Arrangement = Arrange.Vertical
+        { TextLabel1 TextLabel
+          MoveScaled(0,1,24,3)
+          Text = ("Contents message:")
+        }
+        { areaInfo TextEdit
+          MoveScaled(0,3,46,29)
+          Expand = True
+          ReadOnly = True
+          Wrap = True
+        }
+      }
+    }
+    Index = 1
+    Text = ("Contacts")
+    Picture = Picture["people.png"]
+    { HPanel2 HPanel
+      MoveScaled(0,0,58,4)
+      { filterContact TextBox
+        MoveScaled(0,0,33,4)
+      }
+      { filterContButton Button
+        MoveScaled(33,0,10,4)
+        Text = ("Filter ")
+        Picture = Picture["filter22x22.png"]
+      }
+      { refreshButton Button
+        MoveScaled(45,0,10,4)
+        Text = ("Reload")
+        Picture = Picture["refresh22x22.png"]
+      }
+    }
+    { Panel1 Panel
+      MoveScaled(1,5,102,47)
+      Expand = True
+      Arrangement = Arrange.Horizontal
+      { PanelLIstView Panel
+        MoveScaled(2,2,25,37)
+        Expand = True
+        Arrangement = Arrange.Horizontal
+        { listContacts ListView
+          MoveScaled(4,2,16,16)
+          Expand = True
+        }
+      }
+      { panelDataCont Panel
+        MoveScaled(30,2,34,39)
+        Background = &HFFFFFF&
+        Expand = True
+        Arrangement = Arrange.Vertical
+        { panelTextEditCnt Panel
+          MoveScaled(0,0,54,29)
+          Expand = True
+          Arrangement = Arrange.Vertical
+          { Label4 Label
+            MoveScaled(0,0,24,4)
+            Text = ("Contact Info")
+            Alignment = Align.Center
+            Border = Border.Raised
+          }
+          { textContact TextEdit
+            MoveScaled(0,4,54,19)
+            Expand = True
+            ReadOnly = True
+          }
+        }
+      }
+      { smsPanel Panel
+        MoveScaled(66,1,32,45)
+        Background = Color.LightForeground
+        Arrangement = Arrange.Row
+        { Label1 Label
+          MoveScaled(0,0,13,4)
+          Text = ("Phone Number:")
+        }
+        { phoneNumberSms TextBox
+          MoveScaled(13,0,19,4)
+        }
+        { Label3 Label
+          MoveScaled(0,5,24,4)
+          Text = ("Message Text:")
+        }
+        { smsTextArea TextArea
+          MoveScaled(0,9,32,16)
+          Wrap = True
+        }
+        { Label2 Label
+          MoveScaled(0,26,14,4)
+          Text = ("Characters Left:")
+        }
+        { charsLeft LCDNumber
+          MoveScaled(14,26,8,3.5)
+          Background = Color.TextForeground
+          Foreground = &H7DDF1B&
+          Value = 160
+          Style = LCDNumber.Flat
+        }
+        { sendSms Button
+          MoveScaled(8,38,16,4)
+          Text = ("Send Sms")
+        }
+      }
+    }
+    Index = 0
+  }
+  { HBox1 HBox
+    MoveScaled(0,63,73,5)
+    Background = Color.TextBackground
+    Spacing = True
+    Indent = True
+    { iconDisconnect PictureBox
+      MoveScaled(0,0,4,4)
+      ToolTip = ("Disconnect")
+      Picture = Picture["disconnect22x22.png"]
+    }
+    { iconConnect PictureBox
+      MoveScaled(4,0,4,4)
+      Visible = False
+      ToolTip = ("Disconnect")
+      Picture = Picture["connect22x22.png"]
+    }
+    { msgConnection TextLabel
+      MoveScaled(15,0,43,4)
+      Font = Font["Italic"]
+      Text = ("Disconnect")
+      Alignment = Align.Left
+    }
+  }
+}

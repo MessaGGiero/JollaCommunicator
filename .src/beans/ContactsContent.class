@@ -1,0 +1,12 @@
+' Gambas class file
+
+Public contactId As String
+'detail (Tipo di dettaglio Address, Birthday, EmailAddress, Guid, Nickname, Organization, PhoneNumber, Url) 
+Public displayLabel As String
+Public phoneNumber As String[] = New String[]
+Public emailAddress As String[] = New String[]
+Public address As Address[] = New Address[]
+Public birthday As String[] = New String[]
+Public nickname As String[] = New String[]
+Public nameOrg As String[] = New String[]
+Public url As String[] = New String[]

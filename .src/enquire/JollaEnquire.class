@@ -1,0 +1,311 @@
+' Gambas class file 
+
+' Il seguente modulo è stato preso da http://www.gambasforge.org/code-45-gbsshclient.html
+ 
+Private ssh As SshClient 
+' Colonne della query 
+' 1): ID dell'evento  
+' 2): Gruppo di appartenenza 
+' 3): Direzione del messaggio 
+' 4): Numero del messaggio 
+' 5): Numero gruppo conversazione 
+' 6): Data messaggio 
+' 7): Messaggio   
+ Private querySms As String = "sqlite3 /home/nemo/.local/share/commhistory/commhistory.db \"SELECT e.id,e.groupid,e.direction,trim(replace(replace(e.remoteUId,'AREACODE',''),'-','')),trim(replace(replace(replace(g.remoteUids,'AREACODE',''),'-',''),char(10),'/')),strftime('%d-%m-%Y %H:%M',datetime(e.startTime,'unixepoch')), replace(replace(freeText,char(10),' '),'|','') FROM Events e left outer join groups g on (e.groupid = g.id) where e.type = 2 order by e.id desc\""
+ 
+ 
+' Passi per l'invio dei comandi 
+Private maxGroupIdSms As String = "sqlite3 /home/nemo/.local/share/commhistory/commhistory.db \"select max(groupId) from Events where groupId in (select id from Groups where remoteUids like '%PHONENUMBER%')\" " 
+Private addGroup As String = "export LANG=en_US.UTF-8 &&  commhistory-tool add  GROUPID -text \"MESSAGE\" -out -sms \"\" \"PHONENUMBER\""
+Private addGroupEcho As String = "export LANG=it_IT.UTF-8 && commhistory-tool add  GROUPID -text \"MESSAGE\" -out -sms '''' 'PHONENUMBER'"   
+Private sendMessage As String = "dbus-send --system --print-reply --dest=org.ofono /ril_0 org.ofono.MessageManager.SendMessage string:\"PHONENUMBER\" string:\"MESSAGE\"" 
+Private deleteGroup As String = "commhistory-tool deletegroup GROUPID"
+Private deleteEvent As String = "commhistory-tool delete EVENTID"
+ 
+' Colonne della query: 
+' 1) Numero di telefono 
+' 2) Nome del contatto 
+Private queryContacts As String = "echo PASSWORDNEMO | devel-su sqlite3 /home/nemo/.local/share/system/privileged/Contacts/qtcontacts-sqlite/contacts.db \"select distinct replace(replace(p.phoneNumber,'-',''),'AREACODE','') ,c.displayLabel from contacts c left outer join phonenumbers p on (c.contactId = p.contactId) where p.phoneNumber is not null\"" 
+ 
+'Colonne della query: 
+'0) contactId  (Id del contatto) 
+'1) detail   ( Tipo di dettaglio Address, Birthday, EmailAddress, Guid, Nickname, Organization, PhoneNumber, Url )  
+'2) displayLabel  Nome del numero 
+'3) phoneNumber Numero di telefono 
+'4) emailAddress, 
+'5) b.birthday 
+'6) n.nickname 
+'7) a.street Via 
+'8) a.region  
+'9)a.locality  Città 
+'10) a.postCode  
+'11) a.country Nazione 
+'12) o.name Organizzazione 
+'13) u.url  Sito Web 
+Private queryContactsDetail As String =  
+"echo PASSWORDNEMO | devel-su  sqlite3 /home/nemo/.local/share/system/privileged/Contacts/qtcontacts-sqlite/contacts.db " &  
+"\"select " &    
+"c.contactId, " &   
+"upper(d.detail), " &    
+"c.displayLabel, " &     
+"replace(replace(p.phoneNumber,'-',''),'AREACODE',''), " &    
+"e.emailAddress, " &    
+"b.birthday, " &    
+"n.nickname, " &    
+"a.street, " &    
+"a.region, " &    
+"a.locality, " &    
+"a.postCode, " &    
+"a.country, " &    
+"o.name, " &    
+"u.url " &    
+"from  " &    
+"   contacts c  left outer join details d on ( c.contactId = d.contactId) " &    
+"   left outer join phonenumbers p on (c.contactId = p.contactId and d.detailId = p.detailId) " &    
+"   left outer join emailaddresses e on (c.contactId = e.contactId and d.detailId = e.detailId) " &    
+"   left outer join birthdays b on (c.contactId = b.contactId and d.detailId = b.detailId) " &    
+"   left outer join nicknames n on (c.contactId = n.contactId and d.detailId = n.detailId) " &    
+"   left outer join addresses a on (c.contactId = a.contactId and d.detailId = a.detailId) " &    
+"   left outer join organizations o on (c.contactId = o.contactId  and d.detailId = o.detailId) " &    
+"   left outer join urls u on (c.contactId = u.contactId and d.detailId = u.detailId) " &  
+"Where c.syncTarget in ('sim','local') and " &  
+"c.displayLabel is not null  FILTROID order by upper(c.displayLabel )  \"" 
+ 
+Private queryFilter As String = " and upper( ifnull(c.displayLabel,'') || ifnull(replace(replace(p.phoneNumber,'-',''),'AREACODE',''),'') ||  ifnull(e.emailAddress,'') || ifnull(b.birthday,'') ||  ifnull(n.nickname,'') || ifnull(a.street,'') || ifnull(a.region,'') ||  ifnull(a.locality,'') || ifnull(a.postCode,'') || ifnull(a.country,'') || ifnull(o.name,'') || ifnull(u.url, '')) like "  
+ 
+ 
+Public Sub _new(sshConnection As SshClient) 
+   
+  ssh = sshConnection 
+  querySms = Replace$(querySms, "AREACODE", ssh.AreaCode)
+  queryContacts = Replace$(queryContacts, "AREACODE", ssh.AreaCode)
+  queryContactsDetail = Replace$(queryContactsDetail, "AREACODE", ssh.AreaCode)
+  queryContacts = Replace$(queryContacts, "PASSWORDNEMO", ssh.Password) 
+  queryContactsDetail = Replace$(queryContactsDetail, "PASSWORDNEMO", ssh.Password) 
+     
+End 
+ 
+Public Function getListContacts() As Collection 
+
+ 'Colonne della query: 
+' 0) Numero di telefono 
+' 1) Nome del contatto    
+  Dim contacts As Collection 
+  Dim iCounter As Integer 
+  Dim outCmd As String 
+  Dim cntSplit As String[]  
+  Dim fieldSplit As String[] 
+   
+  contacts = New Collection 
+   
+    If ssh.ExecRemoteCmd(queryContacts) < 0 Then 
+          Print "Message Errore: " & ssh.MessageErreur 
+   Else 
+          outCmd = ssh.DataRemoteCmd 
+          cntSplit = Split(outCmd, "\n") 
+          iCounter = 0 
+          
+          While cntSplit.Length > 0 And iCounter <= cntSplit.Count - 1  
+            
+            ' Controllo che ci siano dati completi nella riga 
+            If InStr(cntSplit[iCounter], "|") > 0 Then 
+               fieldSplit = Split(cntSplit[iCounter], "|") 
+               ' Controllo che le colonne siano  numero telefonono e descrizione
+               If fieldSplit.Length = 2 Then
+                If Not IsNull(Trim(fieldSplit[0])) Then
+                  contacts.Add(fieldSplit[1], fieldSplit[0]) 
+                 Endif
+               Endif
+            Endif 
+            iCounter = iCounter + 1 
+          Wend 
+   Endif 
+   Return contacts 
+   
+   
+End 
+ 
+Public Function getlistDetailsContacts(Optional strSearch As String = Null) As String[]  
+  Dim query As String 
+  Dim filter As String 
+  If IsNull(strSearch) Then 
+    query = Replace$(queryContactsDetail, "FILTROID", "")    
+  Else   
+    filter = queryFilter & " '%" & Upper(strSearch) & "%'"  
+    query = Replace$(queryContactsDetail, "FILTROID", filter) 
+  Endif 
+   
+  Return createListGeneric(query) 
+End 
+ 
+ Public Function deleteEvenF(idEvent As String) As Boolean
+  
+  Return deleteSms("EVENT", idEvent)
+  
+End
+
+Public Function deleteGroupF(idGroup As String) As Boolean
+  
+  Return deleteSms("GROUP", idGroup)
+  
+End
+
+Private Function deleteSms(type As String, id As String) As Boolean
+    Dim cmd As String  
+    Dim outCmd As String
+    
+    If IsNull(id) Then  
+       Return False 
+    Endif 
+  
+    If type = "EVENT" Then
+      cmd = Replace$(deleteEvent, "EVENTID", id)    
+    Else If type = "GROUP" Then 
+      cmd = Replace$(deleteGroup, "GROUPID", id)
+    Else
+        Return False 
+    Endif
+  
+    If ssh.ExecRemoteCmd(cmd) < 0 Then 
+          Print "Message Errore: " & ssh.MessageErreur 
+          Return False 
+    Else 
+          outCmd = Trim(ssh.DataRemoteCmd) 
+          'Debug outCmd
+   Endif 
+  
+   Return True
+End
+
+
+ 
+Public Function sendRemoteSms(phoneNumber As String, sms As String) As Boolean 
+   
+  Dim maxGroup As String = "" 
+  Dim cmd As String  
+  Dim outCmd As String 
+  Dim groupId As String 
+   
+  If IsNull(phoneNumber) Then  
+    Return False 
+  Endif 
+    
+    ' 1° Passo calcolo il maxid  
+    'Calcolo Max Group id 
+    cmd = Replace$(maxGroupIdSms, "PHONENUMBER", phoneNumber)    
+    If ssh.ExecRemoteCmd(cmd) < 0 Then 
+          Print "Message Errore: " & ssh.MessageErreur 
+          Return False 
+    Else 
+          outCmd = Trim(ssh.DataRemoteCmd) 
+          groupId = Replace$(outCmd, "\n", "") 
+   Endif 
+    
+
+    
+   '2° Secondo passo invio il messaggio 
+   cmd = Replace$(sendMessage, "PHONENUMBER", phoneNumber)  
+   cmd = Replace$(cmd, "MESSAGE", sms)  
+   If ssh.ExecRemoteCmd(cmd) < 0 Then 
+          Print "Message Errore: " & ssh.MessageErreur 
+          Return False 
+    Else 
+          outCmd = ssh.DataRemoteCmd 
+   Endif 
+   'Debug cmd 
+    
+   '3 ° Scrittura gruppo 
+    cmd = Replace$(addGroup, "PHONENUMBER", phoneNumber)  
+    cmd = Replace$(cmd, "MESSAGE", sms)
+    If IsNull(groupId) Then  
+      groupId = " -newgroup " 
+    Else   
+       groupId = " -group " & groupId 
+    Endif 
+    cmd = Replace$(cmd, "GROUPID", groupId)  
+    
+     If ssh.ExecRemoteCmd(cmd) < 0 Then 
+           Print "Message Errore: " & ssh.MessageErreur 
+           Return False 
+     Else 
+           outCmd = ssh.DataRemoteCmd 
+     Endif 
+    
+   'Debug cmd 
+   
+   Return True 
+   
+End 
+ 
+ 
+ 
+Private Function createListGeneric(squery As String) As String[] 
+   
+     
+  Dim iCounter As Integer 
+  Dim outCmd As String 
+  Dim sSplitLine As String[]  
+  Dim sSplitCol As String[]  
+   
+  'Debug squery 
+   
+  sSplitCol = New String[] 
+   If ssh.ExecRemoteCmd(squery) < 0 Then 
+          Print "Message Errore: " & ssh.MessageErreur 
+   Else 
+          outCmd = ssh.DataRemoteCmd 
+          sSplitLine = Split(outCmd, "\n") 
+           
+          iCounter = 0 
+          While sSplitLine.Length > 0 And iCounter <= sSplitLine.Count - 1  
+              If InStr(sSplitLine[iCounter], "|") > 0 Then 
+                sSplitCol.Add(sSplitLine[iCounter])  
+              Else 
+                  If sSplitCol.Length > 0 Then 
+                    sSplitCol[sSplitCol.Length - 1] = sSplitCol[sSplitCol.Length - 1] & sSplitLine[iCounter] 
+                  Endif        
+              Endif 
+               iCounter = iCounter + 1 
+          Wend 
+           
+   Endif 
+   
+  Return sSplitCol 
+   
+   
+End 
+ 
+ 
+ 
+ 
+Public Function getSms() As String[] 
+ 
+   
+  Dim iCounter As Integer 
+  Dim sms As String 
+  Dim smsSplitLine As String[]  
+  Dim smsSplitCol As String[]  
+   
+  smsSplitCol = New String[] 
+   If ssh.ExecRemoteCmd(querySms) < 0 Then 
+          Print "Message Errore: " & ssh.MessageErreur 
+   Else 
+          sms = ssh.DataRemoteCmd 
+          smsSplitLine = Split(sms, "\n") 
+           
+          iCounter = 0 
+          While smsSplitLine.Length > 0 And iCounter <= smsSplitLine.Count - 1  
+              If InStr(smsSplitLine[iCounter], "|") > 0 Then 
+                smsSplitCol.Add(smsSplitLine[iCounter])  
+              Else 
+                  If smsSplitCol.Length > 0 Then 
+                    smsSplitCol[smsSplitCol.Length - 1] = smsSplitCol[smsSplitCol.Length - 1] & smsSplitLine[iCounter] 
+                  Endif        
+              Endif 
+               iCounter = iCounter + 1 
+          Wend 
+           
+   Endif 
+   
+  Return smsSplitCol 
+End 

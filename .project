@@ -1,0 +1,35 @@
+# Gambas Project File 3.0
+# Compiled with Gambas 3.1.1
+Title=Jolla Communicator
+Startup=mainForm
+Icon=jollaCommunicator.png
+Version=1.0.5
+Component=gb.image
+Component=gb.qt4
+Component=gb.form
+Component=gb.settings
+Component=gb.net
+Component=gb.pcre
+Component=gb.qt4.ext
+Description="Il Jolla Communicator consente di inviare e/o  gestire gli SMS in arrivo."
+Authors="Massimo Iannuzzi \nwww.messaggiero.it"
+TabSize=2
+Maintainer=Massimo Iannuzzi
+Address=max.iannuzzi@gmail.com
+Url=http://www.messaggiero.it
+License=General Public License
+UseRelease=1
+PackageName=jollacommunicator-1.0.5
+CreateEachDirectory=1
+Packager=1
+Systems=fedora,ubuntu
+SameDependencies=1
+SameFiles=1
+Menus=fedora:"Network/Telephony"
+Categories=fedora:"Network;Telephony;TelephonyTools"
+Groups=fedora:"Applications/Communications"
+ExtraDependencies=fedora:"gambas3-gb-form-stock\t\t"
+Menus=ubuntu:"Applications/Mobile Devices"
+Categories=ubuntu:"TelephonyTools"
+Groups=ubuntu:"utils"
+ExtraDependencies=ubuntu:"gambas3-gb-form-stock\t\t"

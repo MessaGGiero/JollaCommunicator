@@ -1,0 +1,858 @@
+' Gambas class file
+
+Public SSHConnection As SshClient
+Private stateConnection As Integer = -1
+Private contacts As Collection
+Private contactsDetails As Collection
+Private messages As Collection
+Public jollaQuery As JollaEnquire
+
+Public areaCode As String = ""
+Public hostName As String = ""
+Public pwdNemo As String = ""
+Public jollaUser As String = "nemo"
+
+
+
+Public Sub _new()
+
+
+
+
+End
+
+Public Sub Form_Open()
+  
+    ' Inizializzazioni
+   Configuration.ReadConfig()
+   If Configuration.hostName = "undefined" Then
+        settingsForm.Run  
+        Configuration.ReadConfig()
+   Endif
+   
+   
+   
+End
+
+
+
+Public Sub connectButton_Click()
+ Dim istart As Integer
+ Dim istop As Integer
+ 
+ If Configuration.hostName = "undefined" Then
+        settingsForm.Run  
+        Configuration.ReadConfig()
+        Return
+ Else       
+   Configuration.ReadConfig()
+ Endif
+ 
+  hostName = Configuration.hostName
+  pwdNemo = Configuration.pwdNemo
+  areaCode = Configuration.areaCode
+  istart = InStr(areaCode, "(")
+  istop = InStr(areaCode, ")")
+  If (istart = 0 Or istop = 0) Then
+    Message.Error("Area Code Error")
+     settingsForm.Run  
+     Return
+  Endif
+  istart = istart + 1
+  istop = istop - 1
+  areaCode = String.Mid(areaCode, istart, (istop - istart) + 1)
+ 
+ 
+  'Connection paramenters
+  SSHConnection = New SshClient As "SSHConnection"
+ 
+  
+  SSHConnection.Hostname = hostName
+  SSHConnection.Port = 22
+  SSHConnection.User = jollaUser 
+  SSHConnection.Password = pwdNemo
+  SSHConnection.AreaCode = areaCode
+  SSHConnection.TimeoutConn = 10
+  
+  'Dice se accettare la key  per default
+  SSHConnection.StrictHostKeyCheck = False
+  SSHConnection.AllowSSH1 = True
+  SSHConnection.AllowSSH2 = True
+  SSHConnection.ActiveLog = False  
+  
+    ' SSH connection to the remote machine 
+  stateConnection = SSHConnection.Connect()
+  If stateConnection < 0 Then
+    
+    Message.Error("Connection Failed")
+   
+  Else
+    iconDisconnect.visible = False
+    iconConnect.X = 0
+    iconConnect.visible = True 
+    msgConnection.Text = "Connect to jolla phone"
+    connectButton.Enabled = False
+    disconnectButton.Enabled = True
+   
+    ' Inizializzazione della classe delle query
+    jollaQuery = New JollaEnquire(SSHConnection)
+    
+    ' Inizializzazione della lista contatti
+    initContacts
+    refreshSms 
+    tabFun.Enabled = True
+    Message.Info("Connection to Jolla Successful!")
+    
+  Endif
+  
+  
+  
+End
+
+Public Sub disconnectButton_Click()
+    
+  If stateConnection >= 0 Then
+    SSHConnection.Disconnect()
+    stateConnection = -1
+  Endif
+  iconConnect.visible = False
+  iconDisconnect.X = 0
+  iconDisconnect.visible = True
+  msgConnection.Text = "Disconnect"
+  connectButton.Enabled = True
+  disconnectButton.Enabled = False
+  treeSms.Clear
+  tabFun.Enabled = False
+End
+
+
+
+Public Sub Form_Close()
+  If stateConnection >= 0 Then
+    SSHConnection.Disconnect()
+  Endif
+End
+
+Public Sub exitButton_Click()
+  mainForm.Close
+End
+
+Public Sub infoButton_Click()
+
+   Balloon.Info(("Jolla Communicator (www.messaggiero.it)"), Last)
+
+End
+
+Public Sub settingsButton_Click()
+  settingsForm.Run
+End
+
+Public Sub SSHConnection_sshError(MessageText As String)
+
+  Dim ret As Integer
+  ' Evenement lorsqu'une erreur apparait dans l'objet SshClient
+  ' Event when an error appears in the SshClient object
+
+  Print "[SSH] " & "Errore"
+  ret = Message.Question("Error connecting Jolla Phone.\nReconnect?", "Reconnect", "Cancel")
+  
+  If ret = 1 Then
+    
+    If stateConnection >= 0 Then
+      SSHConnection.Disconnect()
+      stateConnection = -1
+    Endif
+    iconConnect.visible = False
+    iconDisconnect.X = 0
+    iconDisconnect.visible = True
+    msgConnection.Text = "Disconnect"
+    connectButton.Enabled = True
+    disconnectButton.Enabled = False
+    treeSms.Clear
+    tabFun.Enabled = False
+    
+  Else 
+   
+  Endif
+
+End  
+
+
+Private Sub initContacts()
+  
+  'jollaQuery = New JollaEnquire(SSHConnection)
+  contacts = jollaQuery.getListContacts() 
+  
+  
+End
+
+Private Sub refreshSms()
+  
+  ' Colonne della query
+  ' 0): ID dell'evento 
+  ' 1): Gruppo di appartenenza
+  ' 2): Direzione del messaggio
+  ' 3): Numero del messaggio
+  ' 4): Numero gruppo conversazione
+  ' 5): Data messaggio
+  ' 6): Messaggio 
+  
+  Dim rowStr As String
+  Dim smsList As String[]
+  Dim rowArr As String[]
+  Dim iCounter As Integer
+  Dim iCounterIn As Integer
+  Dim smsObj As SmsContents
+  Dim phoneSplit As String[]
+  
+  Dim picEnter As Picture 
+  Dim picExit As Picture
+  Dim picRoot As Picture
+  Dim picGroup As Picture
+  Dim picGroupSms As Picture
+  Dim appString As String
+  
+  treeSms.Clear
+  
+  picEnter = Picture["enter32x32.png"] 
+  picExit = Picture["exit32x32.png"]
+  picRoot = Picture["conver32x32.png"]
+  picGroup = Picture["convers32x32.png"]
+  picGroupSms = Picture["sms-group32x32.png"]
+   
+  smsList = jollaQuery.getSms()
+  treeSms.Add("root", "", picRoot)
+  
+  messages = New Collection
+  
+  
+  
+  For iCounter = 0 To smsList.Length - 1
+    'Debug smsList[iCounter]
+    
+   rowArr = Split(smsList[iCounter], "|")
+   
+     ' 0): ID dell'evento 
+    ' 1): Gruppo di appartenenza
+    ' 2): Direzione del messaggio
+    ' 3): Numero del messaggio
+    ' 4): Numero gruppo conversazione
+    ' 5): Data messaggio
+    ' 6): Messaggio 
+
+      If IsNull(rowArr) Or rowArr.Count < 7 Then
+         Continue
+      Endif
+     
+     smsObj = New SmsContents
+     smsObj.keyGroup = "Group|" & rowArr[1]
+     smsObj.keyEvent = rowArr[0]
+     smsObj.direction = rowArr[2]
+     smsObj.phoneEvent = rowArr[3]
+     smsObj.phoneGroup = rowArr[4]
+     smsObj.dateEvent = rowArr[5]
+     smsObj.msgEvent = rowArr[6]
+     
+     If IsNull(smsObj.phoneEvent) Then
+        ' siamo nel caso di messaggi multipli  spediti   
+        smsObj.labelNameGroup = "SmS Group"
+        ' splittiamo i numeri del gruppo
+        phoneSplit = Split(smsObj.phoneGroup, "/")
+        If phoneSplit.Count > 0 Then
+          
+            For iCounterIn = 0 To phoneSplit.Length - 1
+              
+              If contacts.Exist(phoneSplit[iCounterIn]) Then
+                 smsObj.labelNameEvent = smsObj.labelNameEvent & contacts[phoneSplit[iCounterIn]] & ";"
+                 
+              Else
+                  smsObj.labelNameEvent = smsObj.labelNameEvent & phoneSplit[iCounterIn] & ";"
+                 
+              Endif
+               ' Gestione degli areacode per i messaggi di gruppo
+               If InStr(phoneSplit[iCounterIn], "+") > 0 Then
+                  smsObj.phoneEvent = smsObj.phoneEvent & phoneSplit[iCounterIn] & ";"
+               Else
+                  smsObj.phoneEvent = smsObj.phoneEvent & mainForm.areaCode & phoneSplit[iCounterIn] & ";"
+               Endif
+            Next
+          
+        Endif
+       
+     Else If contacts.Exist(smsObj.phoneEvent) Then
+       smsObj.labelNameEvent = contacts[smsObj.phoneEvent]
+     Else  
+        smsObj.labelNameEvent = smsObj.phoneEvent
+     Endif
+     
+     If smsObj.labelNameGroup <> "SmS Group" Then
+         If contacts.Exist(smsObj.phoneGroup) Then
+          smsObj.labelNameGroup = contacts[smsObj.phoneGroup]
+         Else
+           smsObj.labelNameGroup = smsObj.phoneGroup
+        Endif
+     Endif
+      
+  
+        ' Aggiungo al gruppo esistente
+        If treeSms.MoveTo(smsObj.keyGroup) Then
+          ' Se non esiste il nodo lo aggancio alla root
+          
+          If smsObj.labelNameGroup <> "SmS Group" Then
+            treeSms.Add(smsObj.keyGroup, smsObj.labelNameGroup, picGroup, "root")
+          Else  
+            treeSms.Add(smsObj.keyGroup, smsObj.labelNameGroup, picGroupSms, "root")
+          Endif
+          
+          
+          
+          If smsObj.direction = "1" Then
+              treeSms.Add(smsObj.keyEvent, "Received from: " & smsObj.labelNameEvent, picEnter, smsObj.keyGroup)
+          Else
+              treeSms.Add(smsObj.keyEvent, "Posted to: " & smsObj.labelNameEvent, picExit, smsObj.keyGroup)
+          Endif
+        Else
+            'Aggancialo a quello esistente 
+            If smsObj.direction = "1" Then
+              treeSms.Add(smsObj.keyEvent, "Received from: " & smsObj.labelNameEvent, picEnter, smsObj.keyGroup)
+            Else
+              treeSms.Add(smsObj.keyEvent, "Posted to: " & smsObj.labelNameEvent, picExit, smsObj.keyGroup)
+            Endif            
+        Endif
+        messages.Add(smsObj, smsObj.keyEvent)
+        'treeSms[smsObj.keyGroup].Expanded = True
+    
+  Next
+  treeSms["root"].Expanded = True
+  
+  
+End
+
+Private Sub refreshTableGrid(Optional strSearch As String = Null)
+  
+'Colonne della query:
+'0) contactId  (Id del contatto)
+'1) detail   ( Tipo di dettaglio Address, Birthday, EmailAddress, Guid, Nickname, Organization, PhoneNumber, Url ) 
+'2) displayLabel  Nome del numero
+'3) phoneNumber Numero di telefono
+'4) emailAddress,
+'5) b.birthday
+'6) n.nickname
+'7) a.street Via
+'8) a.region 
+'9)a.locality  Città
+'10) a.postCode 
+'11) a.country Nazione
+'12) o.name Organizzazione
+'13) u.url  Sito Web
+  
+  Dim rowStr As String
+  Dim cntList As String[]
+  Dim rowArr As String[]
+  Dim iCounter As Integer
+  Dim contactBean As ContactsContent
+  Dim addr As Address 
+  Dim picContact As Picture 
+  Dim ret As String[]
+   
+  picContact = Picture["contact32x32.png"] 
+  contactsDetails = New Collection
+   
+  If IsNull(strSearch) Then
+      cntList = jollaQuery.getlistDetailsContacts()  
+  Else 
+      cntList = jollaQuery.getlistDetailsContacts(strSearch)  
+  Endif 
+      
+  If cntList.Length > 0 Then 
+      listContacts.Clear
+      
+      For iCounter = 0 To cntList.Length - 1
+        rowArr = Split(cntList[iCounter], "|")
+        '0) contactId  (Id del contatto)
+        '1) detail   ( Tipo di dettaglio Address, Birthday, EmailAddress, Guid, Nickname, Organization, PhoneNumber, Url ) 
+        '2) displayLabel  Nome del numero
+        '3) phoneNumber Numero di telefono
+        '4) emailAddress,
+        '5) b.birthday
+        '6) n.nickname
+        '7) a.street Via
+        '8) a.region 
+        '9)a.locality  Città
+        '10) a.postCode 
+        '11) a.country Nazione
+        '12) o.name Organizzazione
+        '13) u.url  Sito Web
+        '
+        If Not listContacts.Exist(rowArr[0]) And rowArr[1] = "PHONENUMBER" Then
+          listContacts.Add(rowArr[0], rowArr[2], picContact)
+        Endif 
+
+    ' Public contactId As String
+    ' Public displayLabel As String
+    ' Public phoneNumber As String[] = New String[]
+    ' Public emailAddress As String[] = New String[]
+    ' Public address As Address[] = New Address[]
+    ' Public birthday As String[] = New String[]
+    ' Public nickname As String[] = New String[]
+    ' Public nameOrg As String[] = New String[]
+    ' Public url As String[] = New String[]
+'   
+         If contactsDetails.Exist(rowArr[0]) Then
+             
+              Select Case rowArr[1]
+                  Case "ADDRESS" 
+                     addr = New Address
+                     addr.street = rowArr[7]
+                     addr.country = rowArr[11]
+                     addr.locality = rowArr[9]
+                     addr.postCode = rowArr[10]
+                     addr.region = rowArr[8]
+                     contactsDetails[rowArr[0]].address.Add(addr)
+                  Case "BIRTHDAY"
+                     contactsDetails[rowArr[0]].birthday.add(rowArr[5])
+                  Case " EMAILADDRESS"
+                      contactsDetails[rowArr[0]].emailAddress.add(rowArr[4])
+                  Case "GUID"
+                  Case "NICKNAME"
+                      contactsDetails[rowArr[0]].nickname.add(rowArr[6])
+                  Case "ORGANIZATION"
+                        contactsDetails[rowArr[0]].nameOrg.add(rowArr[12])
+                  Case "PHONENUMBER"
+                      contactsDetails[rowArr[0]].phoneNumber.add(rowArr[3])
+                  Case "URL" 
+                      contactsDetails[rowArr[0]].url.add(rowArr[13])
+              End Select
+              
+         Else
+              contactBean = New ContactsContent
+              contactBean.displayLabel = rowArr[2]
+              Select Case rowArr[1]
+                  Case "ADDRESS" 
+                     addr = New Address
+                     addr.street = rowArr[7]
+                     addr.country = rowArr[11]
+                     addr.locality = rowArr[9]
+                     addr.postCode = rowArr[10]
+                     addr.region = rowArr[8]
+                     contactBean.address.Add(addr)
+                  Case "BIRTHDAY"
+                     contactBean.birthday.add(rowArr[5])
+                  Case " EMAILADDRESS"
+                      contactBean.emailAddress.add(rowArr[4])
+                  Case "GUID"
+                  Case "NICKNAME"
+                      contactBean.nickname.add(rowArr[6])
+                  Case "ORGANIZATION"
+                        contactBean.nameOrg.add(rowArr[12])
+                  Case "PHONENUMBER"
+                      contactBean.phoneNumber.add(rowArr[3])
+                  Case "URL" 
+                      contactBean.url.add(rowArr[13])
+              End Select
+              contactsDetails.Add(contactBean, rowArr[0])
+         Endif
+      Next
+  Endif
+  
+End
+
+
+Public Sub treeSms_Click()   
+End
+
+Public Sub treeSms_Menu()
+   Dim sKey As String 
+   If treeSms.Item <> Null Then
+       Try sKey = treeSms.Current.Key 
+        If ((InStr(sKey, "root")) = 0) Then
+           'Debug "Chiave:" & treeSms.Current.Key
+           MenuContext.Popup    
+        Endif  
+   Endif
+End
+
+Public Sub tabFun_Click()
+
+ If tabFun.Current.Text = "Contacts" Then
+  
+   phoneNumberSms.Text = ""
+   smsTextArea.Text = ""
+   charsLeft.Value = 160
+   filterContact.Text = "" 
+   textContact.RichText = ""
+   If stateConnection >= 0 Then
+    refreshTableGrid()
+   Endif
+ Else If tabFun.Current.Text = "SMS" Then
+   treeSms.Clear
+   areaInfo.RichText = ""
+    If stateConnection >= 0 Then
+      refreshSms()
+    Endif  
+   
+ Endif
+ 
+  
+End
+
+
+
+
+
+Public Sub smsTextArea_KeyPress()
+
+  If InStr(smsTextArea.Text, "\"") > 0 Then 
+    smsTextArea.Text = Replace(smsTextArea.Text, "\"", "")
+  End If
+  If (smsTextArea.Length = 160) Then
+      charsLeft.Value = 0
+      smsTextArea.Text = Left(smsTextArea.Text, 160)
+  Endif
+  
+
+End
+
+
+
+Public Sub smsTextArea_KeyRelease()
+  If InStr(smsTextArea.Text, "\"") > 0 Then 
+    smsTextArea.Text = Replace(smsTextArea.Text, "\"", "")
+  End If
+  If (smsTextArea.Length <= 160) Then
+    charsLeft.Value = 160 - smsTextArea.Length 
+  Else
+      smsTextArea.Text = Left(smsTextArea.Text, 160)
+  Endif
+
+End
+
+Public Sub listContacts_Click()
+
+  
+
+
+End
+
+
+Public Sub listContacts_Select()
+
+   Dim sKey As String 
+   Dim cntObj As ContactsContent
+   Dim fText As String
+   Dim iCounter As Integer
+   Dim appCount As Integer
+   Dim addr As Address
+   Dim phoneNumber As String = ""
+   
+   
+   Try sKey = listContacts.Item.Key 
+    
+  
+    
+    ' Public url As String[] = New String[]
+     
+    If contactsDetails.Exist(sKey) Then
+      cntObj = contactsDetails[sKey] 
+      
+      fText = ""
+      
+      fText = fText & "<b>Contact Name:&nbsp;</b> " & cntObj.displayLabel & "<br>" 
+   
+      For iCounter = 0 To cntObj.phoneNumber.Length - 1
+         
+         If InStr(cntObj.phoneNumber[iCounter], "+") > 0 Then
+            phoneNumber = cntObj.phoneNumber[iCounter]
+         Else
+           phoneNumber = areaCode & cntObj.phoneNumber[iCounter]
+         Endif          
+         
+        If iCounter = 0 Then
+          
+          phoneNumberSms.Text = phoneNumber
+       
+        Endif        
+         
+        fText = fText & "<b>" & (iCounter + 1) & "° Phone Number: &nbsp; < / b > " & phoneNumber & " < br > " 
+      Next
+      
+      For iCounter = 0 To cntObj.emailAddress.Length - 1 
+        fText = fText & "<b>" & (iCounter + 1) & "° Email addressr: &nbsp; < / b > " & cntObj.emailAddress[iCounter] & " < br > " 
+      Next
+      
+      If cntObj.address.Length > 0 Then 
+          fText = fText & "<b>List Address:&nbsp;</b> <br>" 
+      Endif
+      
+      For iCounter = 0 To cntObj.address.Length - 1
+       
+
+       
+        addr = cntObj.address[iCounter]
+      
+        fText = fText & "<b> " & (iCounter + 1) & "° Street: &nbsp; < / b > " & addr.street & " < br > " 
+        fText = fText & "<b> " & (iCounter + 1) & "° Locality: &nbsp; < / b > " & addr.locality & " < br > " 
+        fText = fText & "<b> " & (iCounter + 1) & "° Post Code: &nbsp; < / b > " & addr.postCode & " < br > " 
+        fText = fText & "<b> " & (iCounter + 1) & "° Country: &nbsp; < / b > " & addr.country & " < br > " 
+        fText = fText & "<b> " & (iCounter + 1) & "° Region: &nbsp; < / b > " & addr.region & " < br > " 
+      Next
+   
+      For iCounter = 0 To cntObj.birthday.Length - 1 
+        fText = fText & "<b>" & (iCounter + 1) & "° Birthday: &nbsp; < / b > " & cntObj.birthday[iCounter] & " < br > " 
+      Next
+
+      For iCounter = 0 To cntObj.nickname.Length - 1 
+        fText = fText & "<b>" & (iCounter + 1) & "° Nickname: &nbsp; < / b > " & cntObj.nickname[iCounter] & " < br > " 
+      Next
+   
+      For iCounter = 0 To cntObj.nameOrg.Length - 1 
+        fText = fText & "<b>" & (iCounter + 1) & "° Organizzation& nbsp; < / b > " & cntObj.nameOrg[iCounter] & " < br > " 
+      Next
+
+     For iCounter = 0 To cntObj.url.Length - 1 
+        fText = fText & "<b>" & (iCounter + 1) & "° WebSite &nbsp; < / b > " & cntObj.url[iCounter] & " < br > " 
+      Next
+
+      textContact.RichText = fText
+
+  Endif
+End
+
+Public Sub treeSms_Select()
+
+   Dim sKey As String 
+   Dim smsObj As SmsContents
+   Dim fText As String
+   Dim phoneNumber As String = ""
+    
+   Try sKey = treeSms.Item.Key 
+   
+   
+   
+   If ((InStr(sKey, "Group|") + InStr(sKey, "root")) = 0) Then
+      
+      ' Non attivo per il momento
+      'Reply.Enabled = True
+      
+      If messages.Exist(sKey) Then
+        smsObj = messages[sKey] 
+        
+        fText = "<h2 align='center'><b><i>Head Post</i>  <b></h2>"
+        If smsObj.direction = "1" Then
+              fText = fText & "<b>Direction: &nbsp;</b> Incoming <br> " 
+        Else
+             fText = fText & "<b>Direction:&nbsp;</b>  Outgoing<br> " 
+        Endif            
+        
+        If InStr(smsObj.phoneEvent, "+") > 0 Then
+          phoneNumber = smsObj.phoneEvent
+        Else
+              phoneNumber = mainForm.areaCode & smsObj.phoneEvent
+        Endif
+        
+        ' Gestione messaggi di gruppo
+        If smsObj.labelNameGroup <> "SmS Group" Then
+            fText = fText & "<b>Phone:&nbsp;</b>" & phoneNumber & "<br>"  
+        Else
+          fText = fText & "<b>Phone:&nbsp;</b>" & smsObj.phoneEvent & "<br>"   
+        Endif
+        
+         
+        fText = fText & "<b>Date:&nbsp;</b>" & smsObj.dateEvent & "<br>" 
+        
+        ' Da eliminare
+        'fText = fText & "<b>Id Message:&nbsp;</b>" & sKey & "<br>"
+        
+        fText = fText & "<h2 align='center'><b><i>Body  Contents</i>  <b></h2>"
+        fText = fText & "<p>" & smsObj.msgEvent & "<p>"
+        
+        areaInfo.RichText = fText
+      Endif
+   Else If InStr(sKey, "Group|") > 0
+     ' Non attivo per il momento
+     'Reply.Enabled = False
+     fText = "<h2 align='center'><b><i>Group Post<</i>  <b></h2>"
+     fText = fText & "<b>Group Name:&nbsp;</b>" & treeSms.Item.Text & "<br>" 
+     fText = fText & "<b>Number of posts:&nbsp;</b>" & treeSms.Item.Count & "<br>"   
+     areaInfo.RichText = fText
+     
+   Else If InStr(sKey, "root")
+     areaInfo.Text = ""
+      ' Non attivo per il momento
+     'Reply.Enabled = False
+   Endif
+   
+   'TextArea1.Text = "Event(" & intEventNumber & "): " & anevent & " Item: '" & sKey & "'\n" & TextArea1.Text 
+   'TextArea1.Pos = 0 
+  
+End
+
+Private Sub refreshContacts()
+  
+  filterContact.Text = "" 
+  textContact.RichText = ""
+  refreshTableGrid()
+  phoneNumberSms.Text = ""
+  smsTextArea.Text = ""
+  charsLeft.Value = 160
+End
+
+
+Public Sub filterContButton_Click()
+  
+  Dim filter As String = ""
+  
+  filter = filterContact.Text
+  
+  
+  If Len(filter) > 0 Then
+      refreshTableGrid(filter)
+  Endif
+
+End
+
+Public Sub refreshButton_Click()
+
+ refreshContacts()
+
+End
+
+Public Sub sendSms_Click()
+Dim smsText As String = ""
+Dim phoneNumber As String = ""
+Dim ret As Boolean
+
+smsText = Trim(smsTextArea.Text)
+phoneNumber = Trim(phoneNumberSms.Text)
+
+If IsNull(smsText) Or Len(smsText) = 0 
+  Message.Error("Insert a text message")
+  Return
+Endif  
+
+If IsNull(phoneNumber) Or Len(phoneNumber) = 0 
+  Message.Error("Insert Phone number")
+  Return
+Endif  
+
+
+  ret = jollaQuery.sendRemoteSms(phoneNumber, smsText)
+  
+  'ret = True
+  If Not ret Then
+    Message.Error("Send error message")
+  Else
+     Message.Info("Message Posted successfully")
+     refreshContacts()
+  Endif
+  
+    
+
+End
+
+Public Sub refreshTreeSms_Click()
+
+  'refreshTableGrid
+   refreshSms()
+End
+
+Public Sub Reply_Click()
+   Dim sKey As String 
+   Dim smsObj As SmsContents
+   Dim fText As String
+   Dim phoneNumber As String = ""
+   Try sKey = treeSms.Current.Key  
+    If messages.Exist(sKey) Then
+        
+        smsObj = messages[sKey] 
+        smsObj.phoneEvent
+        
+    Endif    
+  
+End
+
+
+Public Sub Delete_Click()
+   Dim sKey As String 
+   Dim sSplit As String[] = New String[]
+   Dim fText As String = ""
+   Dim seleCtion As Integer
+   Dim resCmd As Integer
+   
+   Try sKey = treeSms.Current.Key  
+   If InStr(sKey, "Group|") > 0 Then
+            
+            sSplit = Split(sKey, "|") 
+            If sSplit.Length > 0 Then
+                
+                
+                fText = "Warning! Cancellation Group Messages (" & treeSms.Current.text & ").\n" & treeSms.Current.Count & " posts will be deleted.\nConfirm?"
+                seleCtion = Message.Question(fText, "Delete", "Cancel")                
+                If seleCtion = 1 Then
+                  'Debug "Delete Group:" & sSplit[1]
+                  resCmd = jollaQuery.deleteGroupF(sSplit[1])
+                  If resCmd Then
+                      Message.Info("Delete successful")
+                      refreshSms
+                  Else  
+                      Message.Error("Error deleting")
+                  Endif
+                   
+                Endif 
+                  
+            Endif
+   Else
+     
+     fText = "Warning! Messages (" & treeSms.Current.text & ").\n Confirm?"
+     seleCtion = Message.Question(fText, "Delete", "Cancel")              
+     If seleCtion = 1 Then
+                  'Debug "Delete: " & sKey
+                  resCmd = jollaQuery.deleteEvenF(sKey)
+                  If resCmd Then
+                    Message.Info("Delete successful")
+                  refreshSms
+                  Else
+                      Message.Error("Error deleting")  
+                  Endif                  
+                  
+     Endif  
+     
+  Endif   
+End
+
+Private Sub ValidatePhoneNumber(CurrentText As TextBox, plusChar As Boolean)
+
+'Alow numbers:
+If Key.Text Like "[0-9]" Then
+  'Check for special 0 conditions:
+  If Key.Text = "0" Then
+      'Disallow leading 0 if no Decimals:
+      If CurrentText.Text = "" And plusChar = False Then Stop Event
+      'Disallow second 0 if decimals:
+      If CurrentText.Text = "0" Then Stop Event
+  Endif
+  Return
+Endif
+
+'Alow decimal point if Decimals - but only one:
+If plusChar = True Then
+  If Key.Text Like "+" And InStr(CurrentText.Text, "+") = 0 Then
+      Return
+  Endif
+Endif
+
+'Alow editing keys:
+If Key.Code = Key.BackSpace Or Key.Code = Key.Delete Then Return
+If Key.Code = Key.Tab Or Key.Code = Key.Return Then Return
+If Key.Code = Key.Left Or Key.Code = Key.Right Then Return
+
+'Allow nothing else:
+Stop Event
+
+End
+
+Public Sub phoneNumberSms_KeyPress()
+
+  ValidatePhoneNumber(phoneNumberSms, True)
+
+End

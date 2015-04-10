@@ -1,0 +1,7 @@
+' Gambas class file
+
+ Public street As String
+ Public region As String
+ Public locality As String
+ Public postCode As String
+ Public country As String

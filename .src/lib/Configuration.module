@@ -1,0 +1,33 @@
+' Gambas module file
+
+  Public hostName As String = "undefined"
+  Public pwdNemo As String = "undefined" 
+  Public areaCode As String = "undefined"
+
+Public Function ReadIni(IniKey As String, vDEFAULT As Variant) As Variant
+Dim hSettings As Settings
+Dim aVariant As Variant
+
+   hSettings = New Settings(System.User.Home & "/" & ".jollacomunicator.conf")
+   aVariant = hSettings[IniKey, vDEFAULT]
+   Return aVariant
+End
+
+Public Sub WriteIni(IniKey As String, aVariant As Variant)
+Dim hSettings As Settings
+   hSettings = New Settings(System.User.Home & "/" & ".jollacomunicator.conf")
+   hSettings[IniKey] = aVariant
+End
+
+Public Sub SaveConfig(hostName As String, passwdNemo As String, areaCode As String)
+   'Write config to ini file:
+   WriteIni("Setting.HostName", hostname)
+   WriteIni("Setting.PassWord", passwdNemo)
+   WriteIni("Setting.AreaCode", areaCode)  
+End
+
+Public Sub ReadConfig()
+   Me.hostName = ReadIni("Setting.HostName", "undefined")
+   Me.pwdNemo = ReadIni("Setting.PassWord", "undefined")
+   Me.areaCode = ReadIni("Setting.AreaCode", "undefined")
+End

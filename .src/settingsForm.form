@@ -1,0 +1,55 @@
+# Gambas Form File 3.0
+
+{ Form Form
+  MoveScaled(0,0,69,22)
+  Text = ("Settings")
+  Resizable = False
+  Spacing = True
+  Margin = True
+  { hostNameLabel Label
+    MoveScaled(2,2,27,4)
+    Font = Font["Bold"]
+    Text = ("Jolla Hostname or IP address")
+  }
+  { passwdLabel Label
+    MoveScaled(2,7,27,4)
+    Font = Font["Bold"]
+    Text = ("Password user nemo (ssh)")
+  }
+  { HBox1 HBox
+    MoveScaled(1,17,66,4)
+    Spacing = True
+    { Panel1 Panel
+      MoveScaled(4,0,4,4)
+      Expand = True
+    }
+    { btnOK Button
+      MoveScaled(24,0,16,4)
+      Text = ("OK")
+    }
+    { btnCancel Button
+      MoveScaled(43,0,16,4)
+      Text = ("Cancel")
+      Cancel = True
+    }
+  }
+  { textHostName TextBox
+    MoveScaled(29,2,34,4)
+    MaxLength = 255
+  }
+  { textPassword TextBox
+    MoveScaled(29,7,34,4)
+    Password = True
+    MaxLength = 255
+  }
+  { cmbAreaCode ComboBox
+    MoveScaled(29,12,24,4)
+    ReadOnly = True
+    Sorted = True
+  }
+  { passwdLabel2 Label
+    MoveScaled(2,12,27,4)
+    Font = Font["Bold"]
+    Text = ("Area Code")
+  }
+}

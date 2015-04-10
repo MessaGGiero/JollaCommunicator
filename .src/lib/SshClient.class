@@ -1,0 +1,2397 @@
+' Gambas class file
+
+Export
+
+Event ProgressGetFile(Pourcent As Integer) ' Pourcentage de la copie d'un fichier distant en local - Copy pourcentage of a remote file to local
+Event ProgressPutFile(Pourcent As Integer) ' Pourcentage de la copie d'un fichier local vers distant - Copy pourcentage of a local file to remote
+Event sshError(ErrorMessage As String) ' SSH erreur
+Event sshCmdRecieveData(TextRecieve As String) ' Données envoyées par la commande executée sur la machine distante
+
+
+' ssh_auth_e
+Private Enum
+  SSH_AUTH_SUCCESS = 0,
+  SSH_AUTH_DENIED = 1,
+  SSH_AUTH_PARTIAL = 2,
+  SSH_AUTH_INFO = 3,
+  SSH_AUTH_AGAIN = 4,
+  SSH_AUTH_ERROR = -1
+
+' ssh_server_known_e
+Private Enum 
+  SSH_SERVER_ERROR = -1,
+  SSH_SERVER_NOT_KNOWN = 0,
+  SSH_SERVER_KNOWN_OK,
+  SSH_SERVER_KNOWN_CHANGED,
+  SSH_SERVER_FOUND_OTHER,
+  SSH_SERVER_FILE_NOT_FOUND
+
+' ssh_userauth
+Private Enum
+  SSH_AUTH_METHOD_UNKNOWN = 0,
+  SSH_AUTH_METHOD_NONE = 1,
+  SSH_AUTH_METHOD_PASSWORD = 2,
+  SSH_AUTH_METHOD_PUBLICKEY = 4,
+  SSH_AUTH_METHOD_HOSTBASED = 8,
+  SSH_AUTH_METHOD_INTERACTIVE = 10
+
+
+' ssh_options_e
+Private Enum
+  SSH_OPTIONS_HOST,
+  SSH_OPTIONS_PORT,
+  SSH_OPTIONS_PORT_STR,
+  SSH_OPTIONS_FD,
+  SSH_OPTIONS_USER,
+  SSH_OPTIONS_SSH_DIR,
+  SSH_OPTIONS_IDENTITY,
+  SSH_OPTIONS_ADD_IDENTITY,
+  SSH_OPTIONS_KNOWNHOSTS,
+  SSH_OPTIONS_TIMEOUT,
+  SSH_OPTIONS_TIMEOUT_USEC,
+  SSH_OPTIONS_SSH1,
+  SSH_OPTIONS_SSH2,
+  SSH_OPTIONS_LOG_VERBOSITY,
+  SSH_OPTIONS_LOG_VERBOSITY_STR,
+  SSH_OPTIONS_CIPHERS_C_S,
+  SSH_OPTIONS_CIPHERS_S_C,
+  SSH_OPTIONS_COMPRESSION_C_S,
+  SSH_OPTIONS_COMPRESSION_S_C,
+  SSH_OPTIONS_PROXYCOMMAND,
+  SSH_OPTIONS_BINDADDR,
+  SSH_OPTIONS_STRICTHOSTKEYCHECK,
+  SSH_OPTIONS_COMPRESSION,
+  SSH_OPTIONS_COMPRESSION_LEVEL
+
+' Error return codes
+Private Enum
+  SSH_OK = 0,
+  SSH_ERROR = -1,
+  SSH_AGAIN = -2,
+  SSH_EOF = -127
+
+' Code get ssh status
+Private Enum
+  SSH_CLOSED = 1,
+  SSH_READ_PENDING = 2,
+  SSH_CLOSED_ERROR = 4
+
+Private Enum
+  SSH_NOT_CONNECTED = 0,
+  SSH_CONNECTED = 1
+
+' ssh scp mode
+Private Enum
+  SSH_SCP_WRITE,
+  SSH_SCP_READ,
+  SSH_SCP_RECURSIVE = &h10
+
+' ssh mode
+Private Enum
+  SSH_FALSE = 0,
+  SSH_TRUE = 1
+
+' ssh scp request types
+Private Enum
+  SSH_SCP_REQUEST_NEWDIR = 1,
+  SSH_SCP_REQUEST_NEWFILE,
+  SSH_SCP_REQUEST_EOF,
+  SSH_SCP_REQUEST_ENDDIR,
+  SSH_SCP_REQUEST_WARNING
+
+' scp mode
+Private Enum
+  S_ISUID = 0004000,    ' set user id on execution
+  S_ISGID = 0002000,    ' set group id on execution
+  S_ISTXT = 0001000,    ' sticky bit
+  S_IRWXU = 0000700,    ' RWX mask for owner
+  S_IRUSR = 0000400,    ' R for owner
+  S_IWUSR = 0000200,    ' W for owner
+  S_IXUSR = 0000100,    ' X for owner
+  S_IREAD = 0000400,    ' R for read
+  S_IWRITE = 0000200,   ' W for write
+  S_IEXEC = 0000100,    ' X for exec
+  S_IRWXG = 0000070,    ' RWX mask for group
+  S_IRGRP = 0000040,    ' R for group
+  S_IWGRP = 0000020,    ' W for group
+  S_IXGRP = 0000010,    ' X for group
+  S_IRWXO = 0000007,    ' RWX mask for other
+  S_IROTH = 0000004,    ' R For other
+  S_IWOTH = 0000002,    ' W for other
+  S_IXOTH = 0000001,    ' X for other
+  S_IFMT = 0170000,     ' type of file mask
+  S_IFIFO = 0010000,    ' named pipe (fifo)
+  S_IFCHR = 0020000,    ' character special 
+  S_IFDIR = 0040000,    ' directory
+  S_IFBLK = 0060000,    ' block special
+  S_IFREG = 0100000,    ' regular
+  S_IFLNK = 0120000,    ' symbolic link
+  S_IFSOCK = 0140000,   ' socket
+  S_ISVTX = 0001000     ' save swapped text even after use
+
+
+Private Enum
+  SSH_LOG_NOLOG = 0,    ' No logging at all. Only rare And noteworthy events
+  SSH_LOG_RARE = 1,         ' High level protocol information
+  SSH_LOG_PROTOCOL = 2,     ' Lower level protocol infomations, packet level
+  SSH_LOG_PACKET = 3,       ' Every function path
+  SSH_LOG_FUNCTIONS = 4
+
+' Déclaration Librairie SSH
+' Declaration of SSH library
+Library "libssh:4"
+
+Private Extern ssh_new() As Pointer
+
+Private Extern ssh_get_status(SshSession As Pointer) As Integer
+Private Extern ssh_get_version(SshSession As Pointer) As Integer
+
+Private Extern ssh_is_connected(SshSession As Pointer) As Integer
+
+Private Extern ssh_options_set(SshSession As Pointer, OptionType As Integer, Value As Pointer) As Integer
+Private Extern ssh_connect(SshSession As Pointer) As Integer
+Private Extern ssh_disconnect(SshSession As Pointer) As Integer
+Private Extern ssh_free(SshSession As Pointer) As Integer
+Private Extern ssh_get_error(SshSession As Pointer) As String
+
+Private Extern ssh_is_server_known(SshSession As Pointer) As Integer
+Private Extern ssh_get_pubkey_hash(SshSession As Pointer, hash As Pointer) As Integer
+Private Extern ssh_print_hexa(Description As String, Hash As Pointer, sizeHash As Integer)
+Private Extern ssh_get_hexa(Hash As String, sizeHash As Integer) As String
+Private Extern ssh_write_knownhost(SshSession As Pointer) As Integer
+
+Private Extern ssh_userauth_password(SshSession As Pointer, username As String, password As String) As Integer
+
+Private Extern ssh_channel_new(SshSession As Pointer) As Pointer
+Private Extern ssh_channel_open_session(Channel As Pointer) As Integer
+Private Extern ssh_channel_request_exec(Channel As Pointer, Cmd As String) As Integer
+Private Extern ssh_channel_read(Channel As Pointer, dest As Pointer, count As Integer, is_stderr As Integer) As Integer
+Private Extern ssh_channel_read_nonblocking(Channel As Pointer, dest As Pointer, count As Integer, is_stderr As Integer) As Integer
+Private Extern ssh_channel_send_eof(Channel As Pointer) As Integer
+Private Extern ssh_channel_close(Channel As Pointer)
+Private Extern ssh_channel_free(Channel As Pointer)
+Private Extern ssh_set_fd_toread(SshSession As Pointer)
+Private Extern ssh_set_fd_towrite(SshSession As Pointer)
+
+
+Private Extern ssh_scp_new(SshSession As Pointer, mode As Integer, filename As Pointer) As Pointer
+Private Extern ssh_scp_init(scp As Pointer) As Integer
+Private Extern ssh_scp_free(scp As Pointer)
+Private Extern ssh_scp_close(scp As Pointer)
+
+Private Extern ssh_scp_pull_request(scp As Pointer) As Integer
+Private Extern ssh_scp_request_get_filename(scp As Pointer) As Integer
+Private Extern ssh_scp_request_get_size(scp As Pointer) As Integer
+Private Extern ssh_scp_request_get_permissions(scp As Pointer) As Integer
+Private Extern ssh_scp_accept_request(scp As Pointer) As Integer
+Private Extern ssh_scp_sread(scp As Pointer, buffer As Pointer, size As Integer) As Integer Exec "ssh_scp_read"
+Private Extern ssh_buffer_get_len(buffer As Pointer) As Integer
+
+Private Extern ssh_scp_push_directory(scp As Pointer, remoteDirname As Pointer, Mode As Integer) As Integer
+Private Extern ssh_scp_push_file(scp As Pointer, remoteFilename As Pointer, size As Integer, perms As Integer) As Integer
+Private Extern ssh_scp_swrite(scp As Pointer, buffer As Pointer, size As Integer) As Integer Exec "ssh_scp_write"
+
+Private Extern ssh_channel_request_pty(Channel As Pointer) As Integer
+Private Extern ssh_channel_change_pty_size(Channel As Pointer, Cols As Integer, Rows As Integer) As Integer
+Private Extern ssh_channel_request_shell(Channel As Pointer) As Integer
+Private Extern ssh_channel_is_open(Channel As Pointer) As Integer
+Private Extern ssh_channel_is_eof(Channel As Pointer) As Integer
+Private Extern ssh_channel_write(Channel As Pointer, dest As Pointer, count As Integer) As Integer
+
+Private Extern ssh_userauth_none(SshSession As Pointer, username As String) As Integer
+Private Extern ssh_userauth_publickey_auto(SshSession As Pointer, username As String, password As String) As Integer
+Private Extern ssh_get_issue_banner(SshSession As Pointer) As String
+Private Extern ssh_userauth_list(SshSession As Pointer, username As String) As Integer
+Private Extern ssh_userauth_kbdint(SshSession As Pointer, username As String, submethods As String) As Integer
+Private Extern ssh_userauth_kbdint_getname(SshSession As Pointer) As String
+Private Extern ssh_userauth_kbdint_getinstruction(SshSession As Pointer) As String
+Private Extern ssh_userauth_kbdint_getnprompts(SshSession As Pointer) As Integer
+Private Extern ssh_userauth_kbdint_getprompt(SshSession As Pointer, IndexNumber As Integer, Echo As Pointer) As String
+Private Extern ssh_userauth_kbdint_setanswer(SshSession As Pointer, LenAnswer As Integer, Answer As Pointer) As Integer
+
+
+Library "libc:6"
+Private Extern strtoul(mode As Pointer, dechet As Pointer, base As Integer) As Integer
+
+
+' Déclaration des variables
+' Declaration of variables
+Static Private $BufferSize As Integer = 8192
+' The name property exposes the name of the customer
+' owning this account.
+Private $sshconn As Pointer
+' The name property exposes the name of the customer
+' owning this account.
+Private $sshSessionOk As Boolean
+Private $DataRemoteCmd As String
+Private $MessageErreur As String
+Private $DataReadFile As String
+
+' Variables des proprietés
+' Variables of properties
+Private $AreaCode As String 
+Private $ActiveLog As Boolean
+Private $Status As Integer
+Private $Hostname As String
+Private $Port As Integer
+Private $User As String
+Private $Password As String
+Private $TimeoutConn As Long
+Private $StrictHostKeyCheck As Boolean
+Private $AllowSSH1 As Boolean
+Private $AllowSSH2 As Boolean
+
+' Properties
+Property AreaCode As String
+Property ActiveLog As Boolean
+Property Read Status As Integer
+Property Hostname As String
+Property Port As Integer
+Property User As String
+Property Password As String
+Property TimeoutConn As Long
+Property StrictHostKeyCheck As Boolean
+Property AllowSSH1 As Boolean
+Property AllowSSH2 As Boolean
+
+Property Read DataRemoteCmd As String
+Property Read MessageErreur As String
+Property Read DataReadFile As String
+
+Public Const _Properties As String = "*,ActiveLog,Status,Hostname,Port,User,Password,TimeoutConn,StrictHostKeyCheck,AllowSSH1,AllowSSH2,DataRemoteCmd,DataReadFile,MessageErreur"
+
+' ---------------------------------------------------------------------------------------------------------------
+' Implémentation des propriétés
+' Declaration of properties
+' ---------------------------------------------------------------------------------------------------------------
+Private Function ActiveLog_Read() As Boolean
+
+  ' Lecture de la propriété ActiveLog
+  ' Read ActiveLog property
+
+  Return $ActiveLog
+
+End
+
+Private Sub ActiveLog_Write(Value As Boolean)
+
+  ' Ecriture de la propriété ActiveLog
+  ' Write ActiveLog property
+
+  $ActiveLog = Value
+
+End
+
+' ------------------------------------------------
+
+Private Function Status_Read() As Integer
+
+  ' Lecture seule de la propriété Status
+  ' Read only Status property
+
+  Return $Status
+
+End
+
+' ------------------------------------------------
+
+Private Function Hostname_Read() As String
+
+  ' Lecture de la propriété Hostname
+  ' Read Hostname property
+
+  Return $Hostname
+
+End
+
+Private Sub Hostname_Write(Value As String)
+
+  ' Ecriture de la propriété Hostname
+  ' Write Hostname property
+
+  $Hostname = Value
+
+End
+
+' ------------------------------------------------
+
+Private Function Port_Read() As Integer
+
+  ' Lecture de la propriété Port
+  ' Read Port property
+
+  Return $Port
+
+End
+
+Private Sub Port_Write(Value As Integer)
+
+  ' Ecriture de la propriété Port
+  ' Write Port property
+
+  $Port = Value
+
+End
+
+' ------------------------------------------------
+
+Private Function User_Read() As String
+
+  ' Lecture de la propriété User
+  ' Read User property
+
+  Return $User
+
+End
+
+Private Sub User_Write(Value As String)
+
+  ' Ecriture de la propriété User
+  ' Write User Property
+
+  $User = Value
+
+End
+
+' ------------------------------------------------
+
+Private Function Password_Read() As String
+
+  ' Lecture de la propriété Password
+  ' Read Password property
+
+  Return $Password
+
+End
+
+Private Sub Password_Write(Value As String)
+
+  ' Ecriture de la propriété Password
+  ' Read Password property
+
+  $Password = Value
+
+End
+
+' ------------------------------------------------
+
+Private Function TimeoutConn_Read() As Long
+
+  ' Lecture de la propriété TimeoutConn
+  ' Read TimeoutConn property
+
+  Return $TimeoutConn
+
+End
+
+Private Sub TimeoutConn_Write(Value As Long)
+
+  ' Ecriture de la propriété Timeout
+  ' Write TimeoutConn property
+
+  $TimeoutConn = Value
+
+End
+
+' ------------------------------------------------
+
+Private Function StrictHostKeyCheck_Read() As Boolean
+
+  ' Lecture de la propriété StrictHostKeyCheck
+  ' Read StrictHostKeyCheck property
+
+  Return $StrictHostKeyCheck
+
+End
+
+Private Sub StrictHostKeyCheck_Write(Value As Boolean)
+
+  ' Ecriture de la propriété StrictHostKeyCheck
+  ' Write StrictHostKeyCheck property
+
+  $StrictHostKeyCheck = Value
+
+End
+
+' ------------------------------------------------
+
+Private Function AllowSSH1_Read() As Boolean
+
+  ' Lecture de la propriété AllosSSH1
+  ' Read AllowSSH1 property
+
+  Return $AllowSSH1
+
+End
+
+Private Sub AllowSSH1_Write(Value As Boolean)
+
+  ' Ecriture de la propriété AllowSSH1
+  ' Write AllowSSH1 property
+
+  $AllowSSH1 = Value
+
+End
+
+' ------------------------------------------------
+
+Private Function AllowSSH2_Read() As Boolean
+
+  ' Lecture de la propriété AllowSSH2
+  ' Read AllowSSH2 property
+
+  Return $AllowSSH2
+
+End
+
+Private Sub AllowSSH2_Write(Value As Boolean)
+
+  ' Ecriture de la propriété AllowSSH2
+  ' Write AllowSSH2 property
+
+  $AllowSSH2 = Value
+
+End
+
+' ------------------------------------------------
+
+Private Function DataRemoteCmd_Read() As String
+
+  ' Lecture des données remontés lors de l'execution d'une commande distante
+  ' Read datas received during remote command execution
+
+  Return $DataRemoteCmd
+
+End
+
+' ------------------------------------------------
+
+Private Function MessageErreur_Read() As String
+
+  ' Lecture du message d'erreur en texte
+  ' Read the error message in text
+
+  Return $MessageErreur
+
+End
+
+' ------------------------------------------------
+
+Private Function DataReadFile_Read() As String
+
+  ' Lecture des données remontés lors de la lecture d'un fichier sur la machine distante
+  ' Read datas received from file on remote machine
+
+  Return $DataReadFile
+
+End
+
+Private Function AreaCode_Read() As String
+
+  ' Lecture de la propriété Hostname
+  ' Read Hostname property
+
+  Return $AreaCode
+
+End
+
+Private Sub AreaCode_Write(Value As String)
+
+  ' Ecriture de la propriété Hostname
+  ' Write Hostname property
+
+  $AreaCode = Value
+
+End
+
+
+' ---------------------------------------------------------------------------------------------------------------
+' Implémentation des Procedures
+' Declaration of all Procedures
+' ---------------------------------------------------------------------------------------------------------------
+
+Public Sub _new()
+
+  $MessageErreur = "....." & Application.id & "....."
+  $StrictHostKeyCheck = True
+  $AllowSSH1 = True
+  $AllowSSH2 = True
+
+  $ActiveLog = False
+  $DataReadFile = ""
+  $DataRemoteCmd = ""
+
+  $sshconn = ssh_new()
+  If $sshconn = Null Then
+    $MessageErreur = "Creation of new ssh connection fail !"
+    Raise sshError("Creation of new ssh connection fail !")
+    $sshSessionOk = False
+  Else
+    $sshSessionOk = True
+  End If
+
+End
+
+Public Sub _free()
+
+  'Debug "SshClient free: " & Str(Me)
+
+End
+
+
+Public Function Connect() As Integer
+
+  ' Procedure pour Etablir la connexion SSH avec le serveur
+  ' Procedure to Establish an SSH connection with the server
+
+  Dim sHostname As String
+  Dim sPort As Integer
+  Dim sUser As String
+  Dim sTimeoutConn As Integer
+  Dim sStrictHostKeyCheck As Integer
+  Dim sAllowSSH1 As Integer
+  Dim sAllowSSH2 As Integer
+  Dim sRC As Integer
+  Dim sAuthResult As Integer
+  Dim sLogVerbosity As Integer
+  Dim sBannerResult As Integer
+  Dim rc As Integer
+  Dim method As Integer
+  Dim TentativeOk As Boolean
+  Dim TentativeConnect As Integer
+
+  If $sshconn = Null Then
+    Return SSH_ERROR
+  Else
+
+    If $Hostname = "" Then
+      $MessageErreur = "Incorrect hostname !"
+      Raise sshError("Incorrect hostname !")
+      Return SSH_ERROR
+    Endif
+
+    If $Port < 1 Or $Port > 65536 Then
+      $MessageErreur = "Incorrect hostname !"
+      Raise sshError("Incorrect port " & $Port & " !")
+      Return SSH_ERROR
+    Endif
+
+    sHostname = $Hostname
+    sPort = $Port
+    sUser = $User
+    sTimeoutConn = $TimeoutConn
+    sStrictHostKeyCheck = $StrictHostKeyCheck
+    sAllowSSH1 = $AllowSSH1
+    sAllowSSH2 = $AllowSSH2
+    sLogVerbosity = 0
+
+    ' Print "Pointer Cnx: " & Str($sshconn)
+    ' Print "Connexion à " & sHostname, "Port: " & sPort, "User: " & sUser
+    ssh_options_set($sshconn, SSH_OPTIONS_HOST, VarPtr(sHostname))
+    ssh_options_set($sshconn, SSH_OPTIONS_PORT, VarPtr(sPort))
+    ssh_options_set($sshconn, SSH_OPTIONS_USER, VarPtr(sUser))
+    ssh_options_set($sshconn, SSH_OPTIONS_TIMEOUT, VarPtr(sTimeoutConn))
+    ssh_options_set($sshconn, SSH_OPTIONS_STRICTHOSTKEYCHECK, VarPtr(sStrictHostKeyCheck))
+    ssh_options_set($sshconn, SSH_OPTIONS_SSH1, VarPtr(sAllowSSH1))
+    ssh_options_set($sshconn, SSH_OPTIONS_SSH2, VarPtr(sAllowSSH2))
+    ssh_options_set($sshconn, SSH_OPTIONS_LOG_VERBOSITY, VarPtr(sLogVerbosity))
+
+
+    TentativeOk = False
+    For TentativeConnect = 1 To 5
+      sRC = ssh_connect($sshconn)
+
+      Debug "ssh_connect($sshconn) = " & sRC
+
+      If sRC <> SSH_AGAIN Then
+
+        If sRC <> SSH_OK Then
+          Debug "[" & Str(Me) & "] Error during connection to " & sHostname & ": " & ssh_get_error($sshconn)
+          $MessageErreur = "Error during connection to " & sHostname & ": " & ssh_get_error($sshconn)
+          Raise sshError("Error during connection to " & sHostname & ": " & ssh_get_error($sshconn))
+          Return SSH_ERROR
+        Else
+          TentativeOk = True
+          Break
+        End If
+
+      End If
+
+      Debug "[" & Str(Me) & "] Retry(" & TentativeConnect & ")" & sHostname & ": " & ssh_get_error($sshconn)
+
+      Wait 0.1
+    Next
+
+
+    If TentativeOk = True Then
+
+      'Debug "[" & Str(Me) & "] Connection OK."
+
+      ' Verifie l'identité du serveur
+      ' Verify server identity
+      If Verify_KnownHost($sshconn) < 0 Then
+        ssh_disconnect($sshconn)
+        $MessageErreur = "Error during verification of server !"
+        Raise sshError("Error during verification of server !")
+        Return SSH_ERROR
+      Endif
+
+      ' Test d'un authentification normale
+      ' To authenticate 
+      sAuthResult = ssh_userauth_password($sshconn, Null, $Password)
+      If sAuthResult = SSH_AUTH_SUCCESS Then
+        'Debug "[+0] Authenticating successfully."
+        Return sRC
+      End If
+
+
+      ' ' Affichage de la banniere du Server SSH
+      ' ' Display Banner of the server
+      ' sBannerResult = DisplayBanner($sshconn)
+      ' If sBannerResult <> SSH_AUTH_SUCCESS Then
+      '   ssh_disconnect($sshconn)
+      '   ssh_free($sshconn)
+      '   $MessageErreur = "Error displaying server banner !"
+      '   Raise sshError("Error displaying server banner  !")
+      '   Return SSH_ERROR
+      ' End If
+
+
+      rc = ssh_userauth_none($sshconn, Null)
+      If rc = SSH_AUTH_SUCCESS Then
+        'Debug "[0] Authenticating successfully."
+        Return sRC
+      End If
+
+      method = ssh_userauth_list($sshconn, Null)
+
+      '  For the source code of function authenticate_none()
+      If method And SSH_AUTH_METHOD_NONE Then
+        sAuthResult = ssh_userauth_none($sshconn)
+        If sAuthResult = SSH_AUTH_SUCCESS Then
+          'Debug "[1] Authenticating successfully."
+          Return sRC
+        Else
+          ' $MessageErreur = "Error authenticating none !" & ssh_get_error($sshconn)
+          $MessageErreur = "[1] Error authenticating failed !"
+          '$MessageErreur = "Error authenticating none !" & " - Error: " & ssh_get_error($sshconn)
+          'Debug $MessageErreur
+          Raise sshError("[1] Error authenticating failed !")
+          ssh_disconnect($sshconn)
+          Return SSH_ERROR
+        End If
+      End If
+
+      ' For the source code of function authenticate_pubkey
+      If method And SSH_AUTH_METHOD_PUBLICKEY Then
+        sAuthResult = ssh_userauth_publickey_auto($sshconn, Null, Null)
+        If sAuthResult <> SSH_AUTH_SUCCESS Then
+          '$MessageErreur = "Error authenticating publickey failed !" & " - Error: " & ssh_get_error($sshconn)
+          'Debug $MessageErreur
+          ' $MessageErreur = "Error authenticating publickey failed !"
+          'Raise sshError("Error authenticating publickey failed !")
+
+          rc = authenticate_kbdint($sshconn)
+          'Debug "[" & Str(Me) & "] authenticate_kbdint = " & rc
+          If rc = SSH_AUTH_SUCCESS Then
+            'Debug "[" & Str(Me) & "] rc = " & rc & " / SSH_AUTH_SUCCESS = " & SSH_AUTH_SUCCESS
+            'Debug "[2] Authenticating successfully."
+            Return sRC
+          Else
+             '$MessageErreur = "Error authenticating keyboard-interactive failed !" & " - Error: " & ssh_get_error($sshconn)
+             $MessageErreur = "[2] Error authenticating failed !"
+            'Debug "=> method = " & method
+            'Debug "==> " & $MessageErreur
+            ' $MessageErreur = "Error authenticating keyboard-interactive failed !"
+            Raise sshError("[2] Error authenticating failed !")
+            ssh_disconnect($sshconn)
+            Return SSH_ERROR
+          End If
+        Else
+          Return sRC
+        End If
+      End If
+
+      '  For the source code of function authenticate_kbdint()
+      If method And SSH_AUTH_METHOD_INTERACTIVE Then
+        rc = authenticate_kbdint($sshconn)
+        If rc = SSH_AUTH_SUCCESS Then
+          'Debug "[3] Authenticating successfully."
+          Return sRC
+        Else
+          $MessageErreur = "[3] Error authenticating failed !"
+          '$MessageErreur = "Error authenticating failed !" & " - Error: " & ssh_get_error($sshconn)
+          ' $MessageErreur = "Error authenticating with login or password !"
+          'Debug $MessageErreur
+          Raise sshError("[3] Error authenticating failed !")
+          ssh_disconnect($sshconn)
+          Return SSH_ERROR
+        End If
+      End If
+
+      ' For the source code of function authenticate_passwor
+      If method And SSH_AUTH_METHOD_PASSWORD Then
+        sAuthResult = ssh_userauth_password($sshconn, Null, $Password)
+        If sAuthResult = SSH_AUTH_SUCCESS Then
+          'Debug "[4] Authenticating successfully."
+          Return sRC
+        Else
+          $MessageErreur = "[4] Error authenticating failed !"
+          '$MessageErreur = "Error authenticating failed !" & " - Error: " & ssh_get_error($sshconn)
+          ' $MessageErreur = "Error authenticating with login or password !"
+          'Debug $MessageErreur
+          Raise sshError("[4] Error authenticating failed !")
+          ssh_disconnect($sshconn)
+          Return SSH_ERROR
+        End If
+      End If
+
+      'Print "Session SSH ok, authentification avec succès."
+
+      Debug "************** Aucun authentification **************"
+      Return SSH_ERROR
+
+    Else
+      ' Toutes les tentatives ont echouées. Erreur de connection
+      Debug "[" & Str(Me) & "] All attenpts failed ! - Error during connection to " & sHostname & ": " & ssh_get_error($sshconn)
+      $MessageErreur = "All attenpts failed ! - Error during connection to " & sHostname & ": " & ssh_get_error($sshconn)
+      Raise sshError("All attenpts failed ! - Error during connection to " & sHostname & ": " & ssh_get_error($sshconn))
+      Return SSH_ERROR
+    End If
+  End If
+
+End
+
+
+Private Function authenticate_password(SshSession As Pointer) As Integer
+
+  Dim rc As Integer
+
+  rc = ssh_userauth_password(SshSession, Null, $Password)
+  If rc = SSH_AUTH_ERROR Then
+    Return SSH_AUTH_ERROR
+  End If
+
+  Return rc
+
+End
+
+
+Private Function authenticate_kbdint(SshSession As Pointer) As Integer
+
+    ' Procedure pour s'authentifier au clavier de maniere interactive
+    ' Procedure for ssh authenticate keyboard interactive
+
+    Dim rc As Integer
+    Dim name As String
+    Dim instruction As String
+    Dim nprompts As Integer
+    Dim iprompt As Integer
+    Dim prompt As String
+    Dim echo As Byte
+    Dim buffer As String
+    Dim MotDePasse As String
+    Dim ReEssai As Integer
+
+    rc = ssh_userauth_kbdint(SshSession, Null, Null)
+    While rc = SSH_AUTH_INFO
+
+      name = ""
+      instruction = ""
+      nprompts = 0
+      iprompt = 0
+      MotDePasse = $Password
+
+      name = ssh_userauth_kbdint_getname(SshSession)
+      instruction = ssh_userauth_kbdint_getinstruction(SshSession)
+      nprompts = ssh_userauth_kbdint_getnprompts(SshSession)
+
+      ' If name <> "" Then
+      '   Print name & "\n"
+      ' End If
+      ' 
+      ' If instruction <> "" Then
+      '   Print instruction & "\n"
+      ' End If
+
+      For iprompt = 0 To (nprompts - 1)
+        prompt = ""
+        echo = 0
+        buffer = ""
+
+        prompt = ssh_userauth_kbdint_getprompt(SshSession, iprompt, VarPtr(echo))
+
+        If echo <> "" Then
+
+          ' Saisie du mot de passe par l'utilisateur
+          ' Debug "prompt:" & prompt
+
+          If MotDePasse = "" Then
+            ' Si le mot de passe est NULL, sortie en Erreur
+            'Debug "$Password = \"\""
+            Return SSH_AUTH_ERROR
+          Else
+            ' Envoi du mot de passe au serveur SSH
+            buffer = MotDePasse & "\0"
+
+            rc = ssh_userauth_kbdint_setanswer(SshSession, iprompt, VarPtr(buffer))
+            If rc < 0 Then
+              'Debug "SSH_AUTH_ERROR / rc = " & rc
+              Return SSH_AUTH_ERROR
+            End If
+
+          End If
+
+        Endif
+
+      Next
+
+      rc = ssh_userauth_kbdint(SshSession, Null, Null)
+
+      ' Reessai de la fonction 'ssh_userauth_kbdint'
+      ' a la demande du protocole car la suite de l'authentification
+      ' n'a pas aboutie
+      If rc = SSH_AUTH_AGAIN Then
+        For ReEssai = 1 To 10
+          rc = ssh_userauth_kbdint(SshSession, Null, Null)
+          If rc <> SSH_AUTH_AGAIN Then
+            Break
+          End If
+          Wait 0.05
+        Next
+      Endif
+
+    Wend
+
+    ' Debug "ssh_userauth_kbdint(SshSession, Null, Null) = " & rc
+
+    Return rc
+
+End
+
+
+Public Sub Disconnect()
+
+  ' Procedure pour Déconnecter et Libérer la session SSH
+  ' Disconnect and Release Procedure for the SSH session
+
+  Dim sshStatus As Integer
+
+  If $sshconn = Null Then
+    $sshSessionOk = False
+    Return
+  End If
+
+  sshStatus = ssh_is_connected($sshconn)
+  If sshStatus = SSH_NOT_CONNECTED Then
+    $sshSessionOk = False
+    Return
+  Else
+
+    'Print "Déconnexion de la session SSH."
+    ssh_disconnect($sshconn)
+
+  End If
+
+  ' Print "Libération de la session SSH."
+
+End
+
+Public Sub Free()
+
+    ' Procedure pour librer l'objet SSH
+
+    ssh_free($sshconn)
+
+End
+
+
+Private Function Verify_KnownHost(SshSession As Pointer) As Integer
+
+  ' Procedure pour verifier si un Hostname est connu ou non
+  ' Procedure to verify if an Hostname is known or not
+
+  Dim state As Integer
+  Dim hlen As Integer
+  Dim hash As Pointer
+  Dim hexa As String
+  Dim buf As String
+  Dim hashStream As Stream
+  Dim sHash As String
+
+  hash = Alloc(256)
+
+  state = ssh_is_server_known(SshSession)
+  hlen = ssh_get_pubkey_hash(SshSession, hash)
+
+  If hlen < 0 Then
+    Print "Hash length: " & hlen
+    Free(hash)
+    Return -1
+  Endif
+
+  Select Case state
+    Case SSH_SERVER_KNOWN_OK
+      ' Server Known Ok
+
+    Case SSH_SERVER_KNOWN_CHANGED
+      ' Server Known Changed
+      Print "Host key for server changed: it is now" 
+      ssh_print_hexa("Public key hash", Hash, hlen)
+      Print "For security reasons, connection will be stopped"
+      If $StrictHostKeyCheck = True Then
+        Free(hash)
+        Return SSH_ERROR
+      Endif
+
+    Case SSH_SERVER_FOUND_OTHER
+      ' Server Found Other
+      Print "The host key for this server was not found but an other type of key exists."
+      Print "An attacker might change the default server key to confuse your client into thinking the key does not exists."
+      Free(hash)
+      Return SSH_ERROR
+
+    Case SSH_SERVER_FILE_NOT_FOUND
+      ' Server File Not Found
+      Print "Could not find known host file."
+      Print "If you accept the host key here, the file will be automatically created."
+
+    Case SSH_SERVER_NOT_KNOWN
+      ' Server Not Known
+      hashStream = Memory hash For Read 
+      Try sHash = Read #hashStream, 256
+      hexa = ssh_get_hexa(sHash, hlen)
+      Print "The server is unknown. Do you trust the host key?"
+      Print "Public key hash: " & hexa
+      Write #1, "Do you want to add this key (yes/no)? "
+
+      Input buf
+      If buf = "" Then
+        Free(hash)
+        Return SSH_ERROR
+      Endif
+
+      If Lower$(buf) <> "yes" Then
+        Free(hash)
+        Return SSH_ERROR
+      Endif
+
+      Try ssh_write_knownhost(SshSession)
+      If Error Then
+        Free(hash)
+        $MessageErreur = "Error " & Error.Code
+        Raise sshError("Error " & Error.Code)
+        Return SSH_ERROR
+      Else
+        Print "The host key for this server was added."
+      Endif
+
+
+    Case SSH_SERVER_ERROR
+      ' Server Error
+      Free(hash)
+      $MessageErreur = "Error " & ssh_get_error(SshSession)
+      Raise sshError("Error " & ssh_get_error(SshSession))
+      Return SSH_ERROR
+
+  End Select
+
+  Free(hash)
+  Return SSH_OK
+
+End
+
+
+Private Function DisplayBanner(SshSession As Pointer) As Integer
+
+  Dim rc As Integer
+  Dim banner As String
+
+    ' Does Not work without calling ssh_userauth_none() first
+    ' That will be fixed 
+    rc = ssh_userauth_none(SshSession, Null)
+    If rc == SSH_AUTH_ERROR Then
+      Return rc
+    Else
+      banner = ssh_get_issue_banner(SshSession)
+      If banner <> "" Then
+        Write #1, banner & "\n"
+      Else
+        Return rc
+      End If
+    End If
+
+End
+
+
+Public Function ExecRemoteCmdPty(ListCommand As String[]) As Integer
+
+  ' Fonction pour ouvrir une session shell PTY sur une machine distante par SSH
+  ' Function to open a PTY shell session on the remote machine over an SSH connection
+
+  Dim channel As Pointer
+  Dim rc As Integer
+  Dim nbytes As Integer
+  Dim nbytesLen As Integer
+  Dim nwritten As Integer
+  Dim Command As String
+  Dim sCommand As String
+  Dim Buffer As Pointer
+  Dim BufferWrite As Pointer
+  Dim sPos As Integer
+  Dim BufferStream As Stream
+  Dim sText As String
+  Dim NumPhase As Integer
+  Dim FinBoucle As Boolean
+  Dim TextPrompt As String
+  Dim PosNouvelle As Integer
+  Dim PosSav As Integer
+  Dim NbreByteReceive As Integer
+  Dim VerrouAffiche As Boolean
+
+
+  NumPhase = 0
+  FinBoucle = False
+  $DataRemoteCmd = ""
+  PosNouvelle = 1
+  PosSav = 1
+  NbreByteReceive = 0
+  VerrouAffiche = False
+
+  Buffer = Alloc(256)
+
+  If $sshconn = Null Then
+    Free(Buffer)
+    $MessageErreur = "Error no ssh session opened !"
+    Raise sshError("Error no ssh session opened !")
+    Return SSH_ERROR
+  End If
+
+  ' Creation nouveau channel
+  If IsNull(channel) = True Then
+    channel = ssh_channel_new($sshconn)
+    If channel = Null Then
+      ssh_channel_free(channel)
+      Free(Buffer)
+      $MessageErreur = "Error during creation of new channel !"
+      Raise sshError("Error during creation of new channel !")
+      Return SSH_ERROR
+    End If 
+
+    ' Ouverture du nouveau Channel
+    rc = ssh_channel_open_session(channel)
+    If rc <> SSH_OK Then
+      ssh_channel_close(channel)
+      ssh_channel_free(channel)
+      Free(Buffer)
+      $MessageErreur = "Error unable to open the new channel !"
+      Raise sshError("Error unable to open the new channel !")
+      Return rc
+    Endif
+
+  End If
+
+
+  ' Demande d'un terminal pty au travers du Channel
+  rc = ssh_channel_request_pty(channel)
+  If rc <> SSH_OK Then
+    ssh_channel_close(channel)
+    ssh_channel_free(channel)
+    Free(Buffer)
+    $MessageErreur = "Error unable to request a pty shell over the channel !"
+    Raise sshError("Error unable to request a pty shell over the channel !")
+    Return rc
+  Endif
+
+  ' Configuration de la taille du terminal pty: nombre de colonnes et de lignes
+  rc = ssh_channel_change_pty_size(channel, 80, 24)
+  If rc <> SSH_OK Then
+    ssh_channel_close(channel)
+    ssh_channel_free(channel)
+    Free(Buffer)
+    $MessageErreur = "Error unable to configure size of the pty !"
+    Raise sshError("Error unable to configure size of the pty !")
+    Return rc
+  Endif
+
+  ' Demande d'un Shell au travers du Channel
+  rc = ssh_channel_request_shell(channel)
+  If rc <> SSH_OK Then
+    ssh_channel_close(channel)
+    ssh_channel_free(channel)
+    Free(Buffer)
+    $MessageErreur = "Error unable to request a shell over the channel !"
+    Raise sshError("Error unable to request a shell over the channel !")
+    Return rc
+  Endif
+
+
+  'Print "Phase N°" & NumPhase
+
+  If ListCommand.Count > 0 Then
+    Command = ListCommand[0]
+    sCommand = Command & "\n"
+    nbytesLen = String.Len(sCommand)
+    ListCommand.Remove(0)
+  End If
+
+  ' Execution de la commande sur la machine distante par le shell PTY
+  While (ssh_channel_is_open(channel) = SSH_TRUE And ssh_channel_is_eof(channel) = SSH_FALSE)
+
+    ' Lecture des données dans le Buffer
+    nbytes = ssh_channel_read_nonblocking(channel, Buffer, 256, 0)
+    If nbytes < 0 Then
+      ssh_channel_close(channel)
+      ssh_channel_free(channel)
+      Free(Buffer)
+      Return SSH_ERROR
+    Endif
+
+    If nbytes > 0 Then
+      'Print "Lecture des donnees du BUFFER."
+
+      sText = ""
+      BufferStream = Memory Buffer For Read
+      Try sText = Read #BufferStream, nbytes
+      If Error Then
+        ssh_channel_close(channel)
+        ssh_channel_free(channel)
+        Free(Buffer)
+        $MessageErreur = "Error Try read buffer, nbytes. Error: " & Error.Text
+        Raise sshError("Error Try read buffer, nbytes. Error: " & Error.Text)
+        Return SSH_ERROR
+      Else
+        sText = Replace(sText, Chr(8), "", True)
+        NbreByteReceive = String.Len(sText)
+        'Write #1, sText
+        'Print "$DataRemoteCmd &=" & sText
+        $DataRemoteCmd &= sText
+        Raise sshCmdRecieveData(sText)
+      End If
+
+    End If
+
+    If NumPhase = 1 Or NumPhase = 4 Then
+
+      ' Execution de la commande sur la machine distante
+      'Print "ssh_channel_write. Cmd: " & sCommand, "Len(sCommand)=" & Len(sCommand)
+      nwritten = ssh_channel_write(channel, VarPtr(sCommand), nbytesLen)
+      If nwritten <> nbytesLen Then
+        ssh_channel_close(channel)
+        ssh_channel_free(channel)
+        Free(Buffer)
+        $MessageErreur = "Error Try to send data to the channel. Error: " & Error.Text
+        Raise sshError("Error Try to send data to the channel. Error: " & Error.Text)
+        Return SSH_ERROR
+      End If
+
+      Wait 0.15
+
+      Inc NumPhase 
+      'Print "Phase N°" & NumPhase
+
+      Print sCommand
+
+    End If
+
+    If FinBoucle = True Then
+      Break
+    Endif
+
+    If nbytes = 0 Then
+      Select Case NumPhase
+        Case 0
+          TextPrompt = sText
+          sText = ""
+          PosNouvelle = PosSav + NbreByteReceive
+          VerrouAffiche = True
+          'Print "TextPrompt: <" & TextPrompt & ">"
+          'Inc NumPhase
+          'Print "Phase N°" & NumPhase
+        Case 2
+          PosNouvelle = PosSav + NbreByteReceive
+          VerrouAffiche = True
+          Inc NumPhase
+          'Print "Phase N°" & NumPhase
+        Case 3
+          'Print "Arret de la boucle normalement !"
+          If StringMatch($DataRemoteCmd, "--More--\\s*$") = True Then
+            $DataRemoteCmd = Replace($DataRemoteCmd, " --More--", "", True)
+            SearchString($DataRemoteCmd, "\e[\\000-\\255]")
+            $DataRemoteCmd = RTrim$($DataRemoteCmd)
+            sCommand = Chr(32)
+            nbytesLen = String.Len(sCommand)
+            Inc NumPhase
+            'Print "Phase N°" & NumPhase
+
+          Else If $DataRemoteCmd Like "*" & TextPrompt Then
+            If ListCommand.Count > 0 Then
+              Command = ListCommand[0]
+              sCommand = Command & "\n"
+              nbytesLen = String.Len(sCommand)
+              ListCommand.Remove(0)
+
+              If sCommand <> "" Then
+                NumPhase = 1
+                sText = ""
+                FinBoucle = False
+              Endif
+            Else
+              FinBoucle = True
+            End If
+          Endif
+
+          Wait 0.1
+
+        Case 5
+          PosNouvelle = PosSav + NbreByteReceive
+          VerrouAffiche = True
+          NumPhase = 3
+
+      End Select
+
+      If PosNouvelle > PosSav And VerrouAffiche = True Then
+        VerrouAffiche = False
+        Write #1, String.Mid$($DataRemoteCmd, PosSav, (PosNouvelle - PosSav))
+        PosSav = PosNouvelle 
+      Endif
+
+    End If
+
+  Wend
+
+  Print "Fin boucle While..."
+
+  File.Save("/tmp/resultat.txt", $DataRemoteCmd)
+
+  'Print $DataRemoteCmd
+
+  ssh_channel_send_eof(channel)
+  ssh_channel_close(channel)
+  ssh_channel_free(channel)
+  Free(Buffer)
+
+  Return SSH_OK
+
+End
+
+
+Private Function StringMatch(SourceText As String, Pattern As String) As Boolean
+
+  Dim r As Regexp
+
+  If Not SourceText Then
+    Return False
+  End If
+
+  If Not pattern Then
+    Return False
+  End If
+
+  r = New Regexp(SourceText, pattern)
+  If (r.Offset >= 0) Then
+    Return True
+  Else
+    Return False
+  End If
+
+End
+
+
+Private Function SearchString(SourceText As String, Pattern As String) As Boolean
+
+  Dim re As Regexp
+  Dim i As Integer
+
+  If Not SourceText Then
+    Return False
+  End If
+
+  If Not pattern Then
+    Return False
+  End If
+
+  re = New Regexp(SourceText, pattern)
+  If re.submatches.Count > 0 Then
+    Print re.Submatches.Count & " Submatches"
+    For i = 1 To re.Submatches.Count
+      Print "Match: " & Subst("Match &1 is &2 at &3", CStr(i), re.Submatches[i].Text, re.Submatches[i].offset)
+    Next
+  Endif
+
+End
+
+Public Function ExecRemoteCmd(Command As String) As Integer
+
+  ' Fonction pour executer une commande sur la machine distante dans une connexion ssh
+  ' Function to execute a command on the remote machine over an SSH connection
+
+
+  Dim channel As Pointer
+  Dim rc As Integer
+  Dim nbytes As Integer
+  Dim ItemCommand As String
+  Dim sCommand As String
+  Dim Buffer As Pointer
+  Dim sPos As Integer
+  Dim BufferStream As Stream
+  Dim sText As String
+  Dim RetryOpenSession As Integer
+  Dim RetrySession As Integer
+
+  If Command = "" Then
+    $MessageErreur = "Command to remotely execute is empty !"
+    Raise sshError("Command to remotely execute is empty!")
+    Return SSH_ERROR
+  End If
+
+  Buffer = Alloc(1026)
+  $DataRemoteCmd = ""
+  sCommand = Command
+
+  If $sshconn = Null Then
+    Free(Buffer)
+    $MessageErreur = "Error no ssh session opened !"
+    Raise sshError("Error no ssh session opened !")
+    Return SSH_ERROR
+  End If
+
+  ' Creation nouveau channel
+  If IsNull(channel) = True Then
+    channel = ssh_channel_new($sshconn)
+    If channel = Null Then
+      ssh_channel_free(channel)
+      Free(Buffer)
+      $MessageErreur = "Error during creation of new channel !"
+      Raise sshError("Error during creation of new channel !")
+      Return SSH_ERROR
+    End If 
+
+    ' Ouverture du nouveau Channel
+    RetryOpenSession = 1
+    RetrySession = 5
+    While RetryOpenSession <= RetrySession
+      rc = ssh_channel_open_session(channel)
+      If rc <> SSH_OK Then
+        If RetryOpenSession = RetrySession Then
+          ssh_channel_close(channel)
+          ssh_channel_free(channel)
+          Free(Buffer)
+          $MessageErreur = "Error unable to open the new channel !"
+          Raise sshError("Error unable to open the new channel !")
+          Return rc
+        Else
+          Inc RetryOpenSession
+          'Debug "  INC RetryOpenSession: " & RetryOpenSession
+          Wait 0.05
+        End If
+      Else
+        Break
+      Endif
+    Wend
+
+  End If
+
+  ' Execution de la liste des commandes au travers du Channel
+  rc = ssh_channel_request_exec(channel, sCommand)
+  If rc <> SSH_OK Then
+    ssh_channel_close(channel)
+    ssh_channel_free(channel)
+    $MessageErreur = "Error unable to execute command over the channel !"
+    Raise sshError("Error unable to execute command over the channel !")
+    Free(Buffer)
+    Return rc
+  Endif
+
+  ' Reception des données de la commande
+  nbytes = ssh_channel_read(channel, Buffer, 1024, 0)
+  While nbytes > 0
+    sText = ""
+    BufferStream = Memory Buffer For Read 
+    Try sText = Read #BufferStream, nbytes
+    If Error Then
+      ssh_channel_close(channel)
+      ssh_channel_free(channel)
+      Free(Buffer)
+      $DataRemoteCmd = ""
+      $MessageErreur = "Error Try Read buffer, nbytes. Error: " & Error.Text
+      Raise sshError("Error Try Read buffer, nbytes. Error: " & Error.Text)
+      Return SSH_ERROR
+    Else
+      'Write #1, sText
+      'Print "$DataRemoteCmd &=" & sText
+      $DataRemoteCmd &= sText
+      Raise sshCmdRecieveData(sText)
+    End If
+
+    nbytes = ssh_channel_read(channel, Buffer, 1024, 0)
+  Wend
+
+  ' If Right$(sText, 1) <> Chr(10) Then
+  '   Write #1, Chr(10)
+  ' Endif
+
+  If nbytes < 0 Then
+    ssh_channel_close(channel)
+    ssh_channel_free(channel)
+    Free(Buffer)
+    $DataRemoteCmd = ""
+    Return SSH_ERROR
+  Endif
+
+  ' Nettoyage du Channel
+  ssh_channel_send_eof(channel)
+  ssh_channel_close(channel)
+  ssh_channel_free(channel)
+  Free(Buffer)
+
+  Return SSH_OK
+
+End
+
+
+
+Public Function ScpReadFile(RemoteFile As String) As Integer
+
+  ' Fonction pour lire un fichier sur la machine distante 
+  ' Function to read a file on remote machine
+
+  Dim scp As Pointer
+  Dim rc As Integer
+  Dim sRemotefile As String
+
+  If $sshconn = Null Then
+    $MessageErreur = "Error no ssh session opened !"
+    Raise sshError("Error no ssh session opened !")
+    Return SSH_ERROR
+  End If
+
+  If RemoteFile = "" Then
+    $MessageErreur = "Entered empty filename !"
+    Raise sshError("Entered empty filename !")
+    Return SSH_ERROR
+  Endif
+
+  sRemotefile = RemoteFile
+
+  ' Creation nouveau scp
+  ' Create new scp
+  scp = ssh_scp_new($sshconn, SSH_SCP_READ, VarPtr(sRemotefile))
+  If scp = Null Then
+    $MessageErreur = "Error allocating scp session: " & ssh_get_error($sshconn)
+    Raise sshError("Error allocating scp session: " & ssh_get_error($sshconn))
+    Return SSH_ERROR
+  End If
+
+  rc = ssh_scp_init(scp)
+  If rc <> SSH_OK Then
+    ssh_scp_free(scp)
+    $MessageErreur = "Error initializing scp session: " & ssh_get_error($sshconn)
+    Raise sshError("Error initializing scp session: " & ssh_get_error($sshconn))
+    Return rc
+  Endif
+
+  ' Recupération du fichier sur la machine distante
+  ' Retrieve the file on the remote machine
+  If scpReceive($sshconn, scp) = SSH_ERROR Then
+    ssh_scp_close(scp)
+    ssh_scp_free(scp)
+    Return SSH_ERROR
+  Endif
+
+
+  ssh_scp_close(scp)
+  ssh_scp_free(scp)
+  Return SSH_OK
+
+End
+
+
+Private Function scpReceive(SshSession As Pointer, ScpSession As Pointer) As Integer
+
+  ' Fonction pour recevoir un fichier ouverte précedement
+  ' Function to receive an file previously opened
+
+  Dim rc As Integer
+  Dim size As Integer
+  Dim mode As Integer
+  Dim filenamePtr As Pointer
+  Dim filename As String
+  Dim buffer As Pointer
+  Dim bufferStream As Stream
+  Dim sText As String
+  Dim pos As Integer
+  Dim MemBuff As Integer
+  Dim MemBuffSize As Integer
+  Dim nbytes As Integer
+  Dim BuffTotalRead As Integer
+  Dim DiffBuff As Integer
+
+  MemBuff = $BufferSize
+  BuffTotalRead = 0
+  $DataReadFile = ""
+
+  rc = ssh_scp_pull_request(ScpSession)
+  If rc <> SSH_SCP_REQUEST_NEWFILE Then
+    $MessageErreur = "Error receiving information about file: " & ssh_get_error($sshconn)
+    Raise sshError("Error receiving information about file: " & ssh_get_error($sshconn))
+    Return SSH_ERROR
+  Endif
+
+  size = ssh_scp_request_get_size(ScpSession)
+  filenamePtr = ssh_scp_request_get_filename(ScpSession)
+  filename = String@(filenamePtr)
+  mode = ssh_scp_request_get_permissions(ScpSession)
+  If $ActiveLog Then Print "Receiving file: " & filename, "size: " & size, "permissions: " & ssh_scp_string_mode(mode)
+
+  If size = 0 Then
+    $MessageErreur = "Receive file abort. Size of file is 0."
+    Raise sshError("Receive file abort. Size of file is 0.")
+    Return SSH_ERROR
+  End If
+
+  ' Allocation du buffer
+  ' Buffer allocation
+  buffer = Alloc(size)
+  If buffer = Null Then
+    $MessageErreur = "Memory allocation error !"
+    Raise sshError("Memory allocation error !")
+    Return SSH_ERROR
+  Endif
+
+  If size < MemBuff Then
+    MemBuffSize = size
+  Else
+    MemBuffSize = MemBuff
+  Endif
+
+  ssh_scp_accept_request(ScpSession)
+  nbytes = ssh_scp_sread(ScpSession, buffer, MemBuffSize)
+  If nbytes = SSH_ERROR Then
+    Free(buffer)
+    $MessageErreur = "Error receiving file data:" & ssh_get_error($sshconn)
+    Raise sshError("Error receiving file data:" & ssh_get_error($sshconn))
+    Return rc
+  Endif
+
+
+  ' Lecture du contenu du fichier
+  ' Reading the content of file
+
+  If $ActiveLog Then Print "------------ Begin file ------------"
+
+  While nbytes > 0
+    sText = ""
+    BufferStream = Memory Buffer For Read 
+    Try sText = Read #BufferStream, nbytes
+    If Error Then
+      Free(Buffer)
+      $MessageErreur = "Error Try Write buffer, nbytes. Error: " & Error.Text
+      Raise sshError("Error Try Write buffer, nbytes. Error: " & Error.Text)
+      Return SSH_ERROR
+    Else
+
+      If $ActiveLog Then Write #1, sText
+
+      $DataReadFile &= sText
+
+    End If
+
+    BuffTotalRead += MemBuffSize
+
+    DiffBuff = size - BuffTotalRead
+
+    If DiffBuff < MemBuff Then
+      MemBuffSize = DiffBuff
+    Else
+      MemBuffSize = MemBuff
+    Endif
+
+    nbytes = ssh_scp_sread(ScpSession, buffer, MemBuffSize)
+  Wend
+
+  BuffTotalRead += MemBuffSize
+
+  If Right$(sText, 1) <> Chr(10) Then
+    If $ActiveLog Then Write #1, Chr(10)
+  End If
+
+  If $ActiveLog Then Print "------------- End file -------------"
+
+  If $ActiveLog Then Print "Check Size: " & size, BuffTotalRead 
+
+  Free(buffer)
+
+  ' Test si Fin du fichier
+  If BuffTotalRead <> size Then
+    $MessageErreur = "Unexpected request: " & ssh_get_error($sshconn)
+    Raise sshError("Unexpected request: " & ssh_get_error($sshconn))
+    Return SSH_ERROR
+  End If
+
+  If $ActiveLog Then Print "Done"
+
+  Return SSH_OK
+
+End
+
+
+Public Function ScpGetFile(RemoteFile As String, Optional LocalFile As String) As Integer
+
+  ' Fonction pour copier un fichier local vers une machine distante
+  ' Function to copy a local file to a remote machine
+
+  Dim scp As Pointer
+  Dim rc As Integer
+  Dim sRemotefile As String
+
+  If $sshconn = Null Then
+    $MessageErreur = "Error no ssh session opened !"
+    Raise sshError("Error no ssh session opened !")
+    Return SSH_ERROR
+  Else
+    rc = ssh_is_connected($sshconn)
+    If rc <> 1 Then
+      $MessageErreur = "Error no ssh session opened !"
+      Raise sshError("Error no ssh session opened !")
+      Return SSH_ERROR
+    End If
+  End If
+
+  If RemoteFile = "" Then
+    $MessageErreur = "Remote filename empty !"
+    Raise sshError("Remote filename empty !")
+    Return SSH_ERROR
+  Endif
+
+  If LocalFile = "" Then
+    LocalFile = Application.Dir &/ File.Name(RemoteFile)
+  Endif
+
+  sRemotefile = RemoteFile
+
+  ' Creation nouveau scp
+  ' Create new scp
+  scp = ssh_scp_new($sshconn, SSH_SCP_READ, VarPtr(sRemotefile))
+  If scp = Null Then
+    $MessageErreur = "Error allocating read scp session: " & ssh_get_error($sshconn)
+    Raise sshError("Error allocating read scp session: " & ssh_get_error($sshconn))
+    Return SSH_ERROR
+  End If
+
+  rc = ssh_scp_init(scp)
+  If rc <> SSH_OK Then
+    ssh_scp_free(scp)
+    $MessageErreur = "Error initializing scp session: " & ssh_get_error($sshconn)
+    Raise sshError("Error initializing scp session: " & ssh_get_error($sshconn))
+    Return rc
+  Endif
+
+  ' Recupération du fichier sur la machine distante pour l'écrire dans un fichier en local
+  ' Retreive the file on remote machine to write it on a local file
+  If scpReceiveWriteLocal($sshconn, scp, LocalFile) = SSH_ERROR Then
+    ssh_scp_close(scp)
+    ssh_scp_free(scp)
+    $MessageErreur = "Error receiving remote file !"
+    Raise sshError("Error receiving remote file !")
+    Return SSH_ERROR
+  Endif
+
+  ssh_scp_close(scp)
+  ssh_scp_free(scp)
+  Return SSH_OK
+
+End
+
+
+Private Function scpReceiveWriteLocal(SshSession As Pointer, ScpSession As Pointer, LocalFileWrite As String) As Integer
+
+  ' Fonction pour recevoir un fichier ouverte précedement
+  ' et l'écrire en local dans un fichier
+  ' Function to retreive a file previously opened and write it on a local file
+
+  Dim rc As Integer
+  Dim size As Integer
+  Dim mode As Integer
+  Dim modeT As String
+  Dim filenamePtr As Pointer
+  Dim filename As String
+  Dim buffer As Pointer
+  Dim bufferPos As Pointer
+  Dim bufferStream As Stream
+  Dim sText As String
+  Dim MemBuff As Integer
+  Dim MemBuffSize As Integer
+  Dim nbytes As Integer
+  Dim BuffTotalRead As Integer
+  Dim DiffBuff As Integer
+  Dim sLocalFile As File
+  Dim PoucentTransfert As Integer
+  Dim PoucentTransfertSav As Integer
+  Dim Resultat As String
+
+
+  MemBuff = $BufferSize
+  BuffTotalRead = 0
+
+  rc = ssh_scp_pull_request(ScpSession)
+  If rc <> SSH_SCP_REQUEST_NEWFILE Then
+    $MessageErreur = "Error receiving information about file: " & ssh_get_error($sshconn)
+    Raise sshError("Error receiving information about file: " & ssh_get_error($sshconn))
+    Return SSH_ERROR
+  Endif
+
+  size = ssh_scp_request_get_size(ScpSession)
+  filenamePtr = ssh_scp_request_get_filename(ScpSession)
+  filename = String@(filenamePtr)
+  mode = ssh_scp_request_get_permissions(ScpSession)
+  modeT = ssh_scp_string_mode(mode)
+  If $ActiveLog Then Print "Receiving file: " & filename, "size: " & size, "permissions: " & modeT, mode
+
+  If size = 0 Then
+    $MessageErreur = "Receive file abort. Size of file is 0."
+    Raise sshError("Receive file abort. Size of file is 0.")
+    Return SSH_ERROR
+  End If
+
+  ' Allocation du buffer
+  buffer = Alloc(size)
+  If buffer = Null Then
+    $MessageErreur = "Memory allocation error !"
+    Raise sshError("Memory allocation error !")
+    Return SSH_ERROR
+  Endif
+
+  bufferPos = buffer
+  DiffBuff = size
+
+  If size < MemBuff Then
+    MemBuffSize = size
+  Else
+    MemBuffSize = MemBuff
+  Endif
+
+
+  ssh_scp_accept_request(ScpSession)
+  nbytes = ssh_scp_sread(ScpSession, buffer, MemBuffSize)
+  If nbytes = SSH_ERROR Then
+    $MessageErreur = "Error receiving file data:" & ssh_get_error($sshconn)
+    Raise sshError("Error receiving file data:" & ssh_get_error($sshconn))
+    Free(buffer)
+    Return rc
+  Else
+    ' Creation du fichier en local pour recevoir les données
+    ' Creation of file in local to receive the datas
+    Try sLocalFile = Open LocalFileWrite For Create 
+    If Error Then
+      Free(buffer)
+      $MessageErreur = "Unable to create file on local disk !\nFile: " & LocalFileWrite
+      Raise sshError("Unable to create file on local disk !\nFile: " & LocalFileWrite)
+      Return SSH_ERROR
+    Endif
+  Endif
+
+  ' Lecture du contenu du fichier
+  ' Reading of content of file
+  If $ActiveLog Then Print "------------ Debut fichier ------------"
+
+  While nbytes > 0
+
+    sText = ""
+    BufferStream = Memory Buffer For Read 
+    Try sText = Read #BufferStream, MemBuffSize
+    If Error Then
+      Free(Buffer)
+      $MessageErreur = "Error trying Write buffer, nbytes. Error: " & Error.Text
+      Raise sshError("Error trying Write buffer, nbytes. Error: " & Error.Text)
+      Return SSH_ERROR
+    Else
+      Write #sLocalFile, sText, MemBuffSize
+      Flush #sLocalFile
+    End If
+
+    Buffer = bufferPos
+
+    BuffTotalRead += MemBuffSize
+    DiffBuff = size - BuffTotalRead
+
+    If DiffBuff < MemBuff Then
+      MemBuffSize = DiffBuff
+    Else
+      MemBuffSize = MemBuff
+    Endif
+
+    ' Lecture des données suivante du fichier distant
+    ' Reading next datas from remote file
+    nbytes = ssh_scp_sread(ScpSession, Buffer, MemBuffSize)
+
+    PoucentTransfert = (BuffTotalRead / size) * 100
+    If (PoucentTransfert Mod 5) = 0 Then
+      If PoucentTransfert <> PoucentTransfertSav Then
+        PoucentTransfertSav = PoucentTransfert
+        ' Print "Progression: " & PoucentTransfert & "%"
+        Raise ProgressGetFile(PoucentTransfert)
+      End If
+    Endif
+
+  Wend
+
+
+  BuffTotalRead += MemBuffSize
+
+  If $ActiveLog Then Print "------------- End file -------------"
+  If $ActiveLog Then Print "Check Size: " & size, BuffTotalRead
+
+  ' Fermeture du fichier local
+  ' Closing local file
+  Close #sLocalFile
+
+  Free(buffer)
+
+  ' Test si Fin du fichier
+  ' Check if End of file
+  If BuffTotalRead <> size Then
+    $MessageErreur = "Unexpected request: " & ssh_get_error($sshconn)
+    Raise sshError("Unexpected request: " & ssh_get_error($sshconn))
+    Return SSH_ERROR
+  End If
+
+  ' Application des droits au fichier local
+  ' Of rights to local file
+  If modeT <> "" Then
+    Try Exec ["chmod", modeT, Quote(LocalFileWrite)] To Resultat
+    If Error Then
+      $MessageErreur = "Applying rights to local file. Error: " & Error.Text
+      Raise sshError("Applying rights to local file. Error: " & Error.Text)
+      Return SSH_ERROR
+    Endif
+  Endif
+
+  If $ActiveLog Then Print "Done"
+
+  Return SSH_OK
+
+End
+
+
+Public Function ScpPutFile(LocalFile As String, RemoteFile As String) As Integer
+
+  ' Fonction pour copie un fichier local sur la machine distante
+  ' Function to copy a local file on a remote machone
+
+  Dim scp As Pointer
+  Dim rc As Integer
+  Dim sLocalFile As String
+  Dim sRemotefile As String
+  Dim sRemotePath As String
+
+  If $sshconn = Null Then
+    $MessageErreur = "Error no ssh session opened !"
+    Raise sshError("Error no ssh session opened !")
+    Return SSH_ERROR
+  Else
+    rc = ssh_is_connected($sshconn)
+    If rc <> 1 Then
+      $MessageErreur = "Error no ssh session opened !"
+      Raise sshError("Error no ssh session opened !")
+      Return SSH_ERROR
+    End If
+  End If
+
+  If LocalFile = "" Then
+    $MessageErreur = "Local filename empty !"
+    Raise sshError("Local filename empty !")
+    Return SSH_ERROR
+  Endif
+
+  If RemoteFile = "" Then
+    $MessageErreur = "Remote filename empty !"
+    Raise sshError("Remote filename empty !")
+    Return SSH_ERROR
+  Endif
+
+  sLocalFile = LocalFile
+  sRemotefile = RemoteFile
+  sRemotePath = File.Dir(sRemotefile)
+
+  ' Creation nouveau scp
+  ' ' Create new scp
+  scp = ssh_scp_new($sshconn, SSH_SCP_WRITE, VarPtr(sRemotePath))
+  If scp = Null Then
+    $MessageErreur = "Error allocating scp write session: " & ssh_get_error($sshconn)
+    Raise sshError("Error allocating scp write session: " & ssh_get_error($sshconn))
+    Return SSH_ERROR
+  End If
+
+  rc = ssh_scp_init(scp)
+  If rc <> SSH_OK Then
+    ssh_scp_free(scp)
+    $MessageErreur = "Error initializing scp session: " & ssh_get_error($sshconn)
+    Raise sshError("Error initializing scp session: " & ssh_get_error($sshconn))
+    Return rc
+  Endif
+
+  ' Copie d'un fichier local sur la machine distante
+  ' Copy of local file on remote machine
+  If scpSendWriteRemote($sshconn, scp, LocalFile, RemoteFile) = SSH_ERROR Then
+    ssh_scp_close(scp)
+    ssh_scp_free(scp)
+    $MessageErreur = "Error sending local file !"
+    Raise sshError("Error sending local file !")
+    Return SSH_ERROR
+  Endif
+
+  ssh_scp_close(scp)
+  ssh_scp_free(scp)
+  Return SSH_OK
+
+End
+
+
+Private Function scpSendWriteRemote(SshSession As Pointer, ScpSession As Pointer, LocalFile As String, RemoteFileWrite As String) As Integer
+
+  ' Fonction pour envoyer un fichier local sur la machine distante
+  ' et l'écrire 
+  ' Fucntion to send a local file on remote machine and write it
+
+  Dim rc As Integer
+  Dim size As Integer
+  Dim mode As Integer
+  Dim modeT As String
+  Dim buffer As Pointer
+  Dim bufferPos As Pointer
+  Dim iByte As Byte
+  Dim bufferStream As Stream
+  Dim MemBuff As Integer
+  Dim MemBuffSize As Integer
+  Dim BuffTotalRead As Integer
+  Dim DiffBuff As Integer
+  Dim sLocalFile As File
+  Dim PoucentTransfert As Integer
+  Dim PoucentTransfertSav As Integer
+  Dim Resultat As String
+  Dim sRemotefile As String
+  Dim StatLocalFile As Stat
+  Dim indexBuffer As Integer
+
+  MemBuff = $BufferSize
+  BuffTotalRead = 0
+
+  sRemotefile = RemoteFileWrite
+
+  ' Ouverture du fichier local
+  ' Opening local file
+  Try sLocalFile = Open LocalFile For Read
+  If Error Then
+    $MessageErreur = "Error opening local file: " & Error.Text
+    Raise sshError("Error opening local file: " & Error.Text)
+    Return SSH_ERROR
+  End If
+
+  ' Récupération de la taille du fichier local
+  ' Retreiving size of local file
+  Try StatLocalFile = Stat(LocalFile)
+  If Error Then
+    $MessageErreur = "Memory allocation error !"
+    Raise sshError("Memory allocation error !")
+    Return SSH_ERROR
+  Else
+
+    ' Print "StatLocalFile.Group = " & StatLocalFile.Group
+    ' Print "StatLocalFile.Hidden = " & StatLocalFile.Hidden
+    ' Print "StatLocalFile.LastAccess = " & StatLocalFile.LastAccess
+    ' Print "StatLocalFile.LastChange = " & StatLocalFile.LastChange
+    ' Print "StatLocalFile.LastModified = " & StatLocalFile.LastModified
+    ' Print "StatLocalFile.Link = " & Str(StatLocalFile.Link)
+    ' Print "StatLocalFile.Mode = " & StatLocalFile.Mode
+    ' Print "StatLocalFile.Path = " & StatLocalFile.Path
+    ' Print "StatLocalFile.SetGID = " & Str(StatLocalFile.SetGID)
+    ' Print "StatLocalFile.SetUID = " & Str(StatLocalFile.SetUID)
+    ' Print "StatLocalFile.Size = " & StatLocalFile.Size
+    ' Print "StatLocalFile.Sticky = " & Str(StatLocalFile.Sticky)
+    ' Print "StatLocalFile.Time = " & StatLocalFile.Time
+    ' Print "StatLocalFile.Type = " & StatLocalFile.Type
+    ' Print "StatLocalFile.User = " & StatLocalFile.User
+
+    'Print "Perms: " & Bin$(StatLocalFile.Mode, 16)
+
+    mode = StatLocalFile.Mode
+    modeT = ssh_scp_string_mode(mode)
+    size = StatLocalFile.Size
+
+    If $ActiveLog Then Print "Sending file: " & LocalFile, "size: " & size, "permissions: " & modeT
+
+    ' Création du fichier sur la machine distante
+    rc = ssh_scp_push_file(ScpSession, VarPtr(sRemotefile), size, mode)
+    If rc <> SSH_OK Then
+      $MessageErreur = "Error creating remote file:" & ssh_get_error($sshconn)
+      Raise sshError("Error creating remote file:" & ssh_get_error($sshconn))
+      Return rc
+    End If
+
+  Endif
+
+  ' Calcul de la taille du buffer
+  ' Calcul the size of the buffer 
+  If size < MemBuff Then
+    MemBuffSize = size
+  Else
+    MemBuffSize = MemBuff
+  Endif
+
+  ' Lecture du fichier local
+  ' Reading local file
+  If $ActiveLog Then Print "------------ Begin file ------------"
+
+  While (Not Eof(sLocalFile) And MemBuffSize > 0)
+
+    ' Allocation du buffer
+    ' Buffer Allocation
+    buffer = Alloc(MemBuffSize)
+    If buffer = Null Then
+      $MessageErreur = "Memory allocation error !"
+      Raise sshError("Memory allocation error !")
+      Return SSH_ERROR
+    Endif
+
+    bufferPos = buffer
+
+    indexBuffer = 0
+
+    ' Remplissage du buffer
+    ' Buffer filling
+    While indexBuffer < MemBuffSize
+      Read #sLocalFile, iByte
+      bufferStream = Memory buffer For Write 
+      Write #bufferStream, ibyte As Byte
+      Inc buffer
+      Inc indexBuffer
+
+      ' Verefication des données lues
+      'Write #1, iByte As Byte
+    Wend
+
+    ' Transfert des données du buffer sur la machine distante
+    ' Transfert datas from buffer to remote machine
+    rc = ssh_scp_swrite(ScpSession, bufferPos, MemBuffSize)
+    If rc <> SSH_OK Then
+      Free(buffer)
+      $MessageErreur = "Error sending data on remote file:" & ssh_get_error($sshconn)
+      Raise sshError("Error sending data on remote file:" & ssh_get_error($sshconn))
+      Return rc
+    Endif
+
+    Free(bufferPos)
+
+    BuffTotalRead += MemBuffSize
+    'Print "BuffTotalRead=" & BuffTotalRead
+
+    DiffBuff = size - BuffTotalRead
+
+    If DiffBuff < MemBuff Then
+      MemBuffSize = DiffBuff
+    Else
+      MemBuffSize = MemBuff
+    Endif
+    'Print "MemBuffSize=" & MemBuffSize
+
+    ' Pourcentage de progression de la copie
+    ' Progress Pourcentage of the copy 
+    PoucentTransfert = (BuffTotalRead / size) * 100
+    If (PoucentTransfert Mod 5) = 0 Then
+      If PoucentTransfert <> PoucentTransfertSav Then
+        PoucentTransfertSav = PoucentTransfert
+        ' Print "Progression: " & PoucentTransfert & "%"
+        Raise ProgressPutFile(PoucentTransfert)
+      End If
+    Endif
+
+  Wend
+
+  If $ActiveLog Then Print "------------- End file -------------"
+
+  If $ActiveLog Then Print "Done"
+
+  Return SSH_OK
+
+End
+
+
+
+Public Function ScpNewRemoteDir(RemoteDirName As String, Perms As String) As Integer
+
+  ' Fonction pour créer un repertoire sur la machine distante
+  ' Fucntion to create a directory on remote machine
+
+  Dim scp As Pointer
+  Dim rc As Integer
+  Dim sRemoteDirName As String
+  Dim sRemotePath As String
+  Dim mode As Integer
+
+  If $sshconn = Null Then
+    $MessageErreur = "Error no ssh session opened !"
+    Raise sshError("Error no ssh session opened !")
+    Return SSH_ERROR
+  Else
+    rc = ssh_is_connected($sshconn)
+    If rc <> 1 Then
+      $MessageErreur = "Error no ssh session opened !"
+      Raise sshError("Error no ssh session opened !")
+      Return SSH_ERROR
+    End If
+  End If
+
+  If RemoteDirName = "" Then
+    $MessageErreur = "Remote filename empty !"
+    Raise sshError("Remote filename empty !")
+    Return SSH_ERROR
+  Endif
+
+  mode = ssh_scp_integer_mode(perms)
+  If mode = -1 Then
+    $MessageErreur = "Unix string perms not valid ! [" & Perms & "]"
+    Raise sshError("Unix string perms not valid ! [" & Perms & "]")
+    Return SSH_ERROR
+  End If
+
+  sRemoteDirName = RemoteDirName
+  If File.Dir(RemoteDirName) = "" Then
+    sRemotePath = "."
+  Else
+    sRemotePath = File.Dir(RemoteDirName)
+  Endif
+
+  If $ActiveLog Then Print "sRemotePath='" & sRemotePath & "'"
+
+  ' Creation nouveau scp
+  ' Create new scp
+  scp = ssh_scp_new($sshconn, (SSH_SCP_WRITE Or SSH_SCP_RECURSIVE), VarPtr(sRemotePath))
+  If scp = Null Then
+    $MessageErreur = "Error allocating scp write session: " & ssh_get_error($sshconn)
+    Raise sshError("Error allocating scp write session: " & ssh_get_error($sshconn))
+    Return SSH_ERROR
+  End If
+
+  rc = ssh_scp_init(scp)
+  If rc <> SSH_OK Then
+    ssh_scp_free(scp)
+    $MessageErreur = "Error initializing scp session: " & ssh_get_error($sshconn)
+    Raise sshError("Error initializing scp session: " & ssh_get_error($sshconn))
+    Return rc
+  Endif
+
+  ' Print "Chemin : " & RemoteDirName
+  ' Print "Path   : " & sRemotePath
+  ' Print "DirName: " & sRemoteDirName
+
+
+  ' Creation du répertoire sur la machine distance
+  ' Creation of directory on remote machine
+  rc = ssh_scp_push_directory(scp, VarPtr(sRemoteDirName), mode)
+  If rc <> SSH_OK Then
+    $MessageErreur = "Can't create remote directory: " & ssh_get_error($sshconn) & "  Code: " & rc
+    Raise sshError("Can't create remote directory: " & ssh_get_error($sshconn) & "  Code: " & rc)
+    Return rc
+  End If
+
+  ssh_scp_close(scp)
+  ssh_scp_free(scp)
+  Return SSH_OK
+
+End
+
+
+Public Function ScpNewRemoteFile(RemoteFileName As String, DataFile As String, Perms As String) As Integer
+
+  ' Fonction pour Créer un fichier + data sur la machine distante 
+  ' Fucntion to create a file + data on remote machine
+
+  Dim scp As Pointer
+  Dim rc As Integer
+  Dim sRemoteFileName As String
+  Dim sRemotePath As String
+  Dim sDataFile As String
+  Dim mode As Integer
+
+
+  If DataFile = "" Then
+    $MessageErreur = "Data of new file to create is empty !"
+    Raise sshError("Data of new file to create is empty !")
+    Return SSH_ERROR
+  Else
+    sDataFile = DataFile
+  Endif
+
+
+  If $sshconn = Null Then
+    $MessageErreur = "Error no ssh session opened !"
+    Raise sshError("Error no ssh session opened !")
+    Return SSH_ERROR
+  Else
+    rc = ssh_is_connected($sshconn)
+    If rc <> 1 Then
+      $MessageErreur = "Error no ssh session opened !"
+      Raise sshError("Error no ssh session opened !")
+      Return SSH_ERROR
+    End If
+  End If
+
+  If RemoteFileName = "" Then
+    $MessageErreur = "Remote filename empty !"
+    Raise sshError("Remote filename empty !")
+    Return SSH_ERROR
+  Endif
+
+  mode = ssh_scp_integer_mode(perms)
+  If mode = -1 Then
+    $MessageErreur = "Unix string perms not valid ! [" & Perms & "]"
+    Raise sshError("Unix string perms not valid ! [" & Perms & "]")
+    Return SSH_ERROR
+  End If
+
+  sRemoteFileName = RemoteFileName
+  If File.Dir(RemoteFileName) = "" Then
+    sRemotePath = "."
+  Else
+    sRemotePath = File.Dir(RemoteFileName)
+  Endif
+
+  If $ActiveLog Then Print "sRemotePath='" & sRemotePath & "'"
+
+  ' Creation nouveau scp
+  ' Create new scp
+  scp = ssh_scp_new($sshconn, (SSH_SCP_WRITE Or SSH_SCP_RECURSIVE), VarPtr(sRemotePath))
+  If scp = Null Then
+    $MessageErreur = "Error allocating scp write session: " & ssh_get_error($sshconn)
+    Raise sshError("Error allocating scp write session: " & ssh_get_error($sshconn))
+    Return SSH_ERROR
+  End If
+
+  rc = ssh_scp_init(scp)
+  If rc <> SSH_OK Then
+    ssh_scp_free(scp)
+    $MessageErreur = "Error initializing scp session: " & ssh_get_error($sshconn)
+    Raise sshError("Error initializing scp session: " & ssh_get_error($sshconn))
+    Return rc
+  Endif
+
+  ' Print "Chemin : " & RemoteDirName
+  ' Print "Path   : " & sRemotePath
+  ' Print "DirName: " & sRemoteDirName
+
+
+  ' Creation du nouveau fichier sur la machine distance
+  ' Creation of new file on remote machine
+  rc = ssh_scp_push_file(scp, VarPtr(sRemoteFileName), Len(sDataFile), mode)
+  If rc <> SSH_OK Then
+    $MessageErreur = "Can't open remote file: " & ssh_get_error($sshconn) & "  Code: " & rc
+    Raise sshError("Can't open remote file: " & ssh_get_error($sshconn) & "  Code: " & rc)
+    Return rc
+  End If
+
+
+  ' Ecriture des données dans le nouveau fichier sur la machine distance
+  ' Writing of data to the new file on remote machine
+  rc = ssh_scp_swrite(scp, VarPtr(sDataFile), Len(sDataFile))
+  If rc <> SSH_OK Then
+    $MessageErreur = "Can't write to remote file: " & ssh_get_error($sshconn) & "  Code: " & rc
+    Raise sshError("Can't write to remote file: " & ssh_get_error($sshconn) & "  Code: " & rc)
+    Return rc
+  End If
+
+
+
+  ' rc = ssh_scp_push_file
+  '     (scp, "helloworld.txt", length, S_IRUSR |  S_IWUSR);
+  '   if (rc != SSH_OK)
+  '   {
+  '     fprintf(stderr, "Can't open remote file: %s\n",
+  '             ssh_get_error(session));
+  '     return rc;
+  '   }
+  ' 
+  '   rc = ssh_scp_write(scp, helloworld, length);
+  '   if (rc != SSH_OK)
+  '   {
+  '     fprintf(stderr, "Can't write to remote file: %s\n",
+  '             ssh_get_error(session));
+  '     return rc;
+  '   }
+  ' 
+  '   return SSH_OK;
+
+
+  ssh_scp_close(scp)
+  ssh_scp_free(scp)
+  Return SSH_OK
+
+End
+
+
+
+Private Function ssh_scp_string_mode(mode As Short) As String
+
+  ' Fonction pour convertir un mode Unix en string scp
+  ' Function to convert Unix mode to scp string
+
+  Dim OtherPerm As Short
+  Dim GroupPerm As Short
+  Dim UserPerm As Short
+  Dim TypePerm As Short
+  Dim MaskPerm As Short
+
+  ' Isolement des bits Permission Other
+  ' Isolation of bits Other Permissions
+  MaskPerm = &x0000000000000111
+  OtherPerm = mode And MaskPerm
+
+  ' Isolement des bits Permission Group
+  ' Isolation of bits Permission Group
+  MaskPerm = &x0000000000111000
+  GroupPerm = Lsr((mode And MaskPerm), 3)
+
+  ' Isolement des bits Permission User
+  ' Isolation of bits Permission User
+  MaskPerm = &x0000000111000000
+  UserPerm = Lsr((mode And MaskPerm), 6)
+
+  ' Isolement des bits Permission Sticky
+  ' Isolation of bits Permission Sticky
+  MaskPerm = &x0000111000000000
+  TypePerm = Lsr((mode And MaskPerm), 9)
+
+  Return Str(TypePerm) & Str(UserPerm) & Str(GroupPerm) & Str(OtherPerm)
+
+End
+
+Private Function ssh_scp_integer_mode(mode As String) As Short
+
+  ' Fonction pour convertir un mode Unix texte en entier scp
+  ' Function to convert Unix mode to scp integer 
+
+  Dim ResultPerm As Short
+
+  Dim sMode As String
+  Dim sDechet As Pointer
+
+  If mode = "" Or Len(mode) <> 4 Then
+    $MessageErreur = "Unix string perms not valid ! [" & mode & "]  Example: 0644"
+    Raise sshError("Unix string perms not valid ! [" & mode & "]  Example: 0644")
+    Return SSH_ERROR
+  Endif
+
+  sMode = mode
+
+  ResultPerm = CShort(strtoul(VarPtr(sMode), sDechet, 8))
+  If ResultPerm = 0 Then
+    $MessageErreur = "Unix string perms not valid ! [" & sMode & "]"
+    Raise sshError("Unix string perms not valid ! [" & sMode & "]")
+    Return SSH_ERROR
+  Endif
+
+  If $ActiveLog Then Print "ResulPerm     = " & Bin$(ResultPerm, 16), "Perm: " & ResultPerm, "String:" & sMode
+
+  Return ResultPerm
+
+End

@@ -1,0 +1,12 @@
+' Gambas class file
+
+
+  Public keyGroup As String
+  Public keyEvent As String
+  Public direction As String
+  Public phoneEvent As String
+  Public phoneGroup As String
+  Public dateEvent As String
+  Public msgEvent As String
+  Public labelNameEvent As String
+  Public labelNameGroup As String
