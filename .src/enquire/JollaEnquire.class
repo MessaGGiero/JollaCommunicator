@@ -11,8 +11,7 @@ Private ssh As SshClient
 ' 5): Numero gruppo conversazione 
 ' 6): Data messaggio 
 ' 7): Messaggio   
- Private querySms As String = "sqlite3 /home/nemo/.local/share/commhistory/commhistory.db \"SELECT e.id,e.groupid,e.direction,trim(replace(replace(e.remoteUId,'AREACODE',''),'-','')),trim(replace(replace(replace(g.remoteUids,'AREACODE',''),'-',''),char(10),'/')),strftime('%d-%m-%Y %H:%M',datetime(e.startTime,'unixepoch')), replace(replace(freeText,char(10),' '),'|','') FROM Events e left outer join groups g on (e.groupid = g.id) where e.type = 2 order by e.id desc\""
- 
+Private querySms As String = "sqlite3 /home/nemo/.local/share/commhistory/commhistory.db \"SELECT e.id,e.groupid,e.direction,trim(replace(replace(e.remoteUId,'AREACODE',''),'-','')),trim(replace(replace(replace(g.remoteUids,'AREACODE',''),'-',''),char(10),'/')),strftime('%d-%m-%Y %H:%M',datetime(e.startTime,'unixepoch','localtime')), replace(replace(freeText,char(10),' '),'|','') FROM Events e left outer join groups g on (e.groupid = g.id) where e.type = 2 order by e.id desc\"" 
  
 ' Passi per l'invio dei comandi 
 Private maxGroupIdSms As String = "sqlite3 /home/nemo/.local/share/commhistory/commhistory.db \"select max(groupId) from Events where groupId in (select id from Groups where remoteUids like '%PHONENUMBER%')\" " 
